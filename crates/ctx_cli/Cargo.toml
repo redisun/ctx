@@ -1,0 +1,20 @@
+[package]
+name = "ctx_cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ctx"
+path = "src/main.rs"
+
+[dependencies]
+ctx_core = { path = "../ctx_core" }
+clap.workspace = true
+anyhow.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+indicatif.workspace = true
+console.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

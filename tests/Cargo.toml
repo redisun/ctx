@@ -1,0 +1,19 @@
+[package]
+name = "ctx-e2e-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[test]]
+name = "e2e"
+path = "e2e/main.rs"
+harness = true
+
+[dependencies]
+ctx_core = { path = "../crates/ctx_core" }
+anyhow.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]

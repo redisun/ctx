@@ -1,0 +1,25 @@
+[package]
+name = "ctx_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+blake3.workspace = true
+zstd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_repr.workspace = true
+postcard.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+hex.workspace = true
+redb.workspace = true
+fs2.workspace = true
+uuid.workspace = true
+lsp-types.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

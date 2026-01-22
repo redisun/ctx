@@ -1,0 +1,45 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# CTX repository directories (created when using the CTX system)
+.ctx/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS-specific files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Debug and test artifacts
+*.orig
+*.rej
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Coverage reports (if using cargo-llvm-cov or similar)
+tarpaulin-report.html
+coverage/
+*.profraw
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Backup files
+*.bak
+*.backup
