@@ -1,4 +1,12 @@
+<div align="center">
+  <img src="logo.png" alt="CTX Logo" width="300">
+</div>
+
 # CTX
+
+![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)
+![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
+![Edition](https://img.shields.io/badge/edition-2021-purple.svg)
 
 **Context management for coding agents.**
 
@@ -13,6 +21,18 @@ CTX retrieves:
   - Related functions that call it  
   - Notes from when it broke in testing
 ```
+
+---
+
+## Research Background
+
+This project builds on ideas from recent research:
+
+> "Git Context Controller: Manage the Context of LLM-Based Agents Like Git"  
+> Junde Wu, University of Oxford  
+> arXiv:2508.00031, July 2025
+
+The paper shows that version-control semantics for agent memory improves performance on coding benchmarks. CTX extends this with content-addressed storage, automatic code analysis, and graph-based retrieval.
 
 ---
 
@@ -822,18 +842,17 @@ CTX is under active development. See `docs/PRD.md` for the full specification.
 
 ---
 
-## Research Background
-
-This project builds on ideas from recent research:
-
-> "Git Context Controller: Manage the Context of LLM-Based Agents Like Git"  
-> Junde Wu, University of Oxford  
-> arXiv:2508.00031, July 2025
-
-The paper shows that version-control semantics for agent memory improves performance on coding benchmarks. CTX extends this with content-addressed storage, automatic code analysis, and graph-based retrieval.
-
----
-
 ## License
 
-MIT
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
