@@ -371,6 +371,30 @@ to store and retrieve context across sessions.
         Ok(self.index.as_ref().unwrap())
     }
 
+    /// Gets a mutable reference to the index, loading it if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the index can't be loaded or rebuilt.
+    pub fn index_mut(&mut self) -> Result<&mut Index> {
+        if self.index.is_none() {
+            let index_path = self.ctx_dir().join("index/index.redb");
+
+            // Try to open existing index
+            match Index::open(&index_path)? {
+                Some(idx) => self.index = Some(idx),
+                None => {
+                    // Rebuild if missing
+                    let head = self.head_id()?;
+                    let idx = Index::rebuild_from_objects(&index_path, &self.object_store, head)?;
+                    self.index = Some(idx);
+                }
+            }
+        }
+
+        Ok(self.index.as_mut().unwrap())
+    }
+
     /// Rebuilds the index from scratch.
     ///
     /// This is useful if the index is corrupted or out of date.
@@ -703,6 +727,7 @@ to store and retrieve context across sessions.
         let mut files_analyzed = 0;
         let mut symbols_found = 0;
         let mut calls_resolved = 0;
+        let mut file_blobs: Vec<(String, ObjectId)> = Vec::new(); // Store path→blob mappings
 
         for file in rust_files {
             match analyzer.analyze_file(&file) {
@@ -712,8 +737,14 @@ to store and retrieve context across sessions.
                     calls_resolved += analysis.calls.len();
 
                     // Read file content for ObjectId computation
-                    let file_path = file.to_string_lossy().to_string();
+                    // Canonicalize to ensure absolute paths (FIX for path matching)
+                    let file_canonical = file.canonicalize()?;
+                    let file_path = file_canonical.to_string_lossy().to_string();
                     let file_content = std::fs::read(&file)?;
+
+                    // Store file content as blob (FIX for prompt pack retrieval)
+                    let file_blob_id = self.object_store.put_blob(&file_content)?;
+                    file_blobs.push((file_path.clone(), file_blob_id));
 
                     let commit_id = self.head_id()?;
                     let edges = build_edges_from_analysis(
@@ -775,6 +806,10 @@ to store and retrieve context across sessions.
         // Rebuild index to make edges immediately queryable
         self.rebuild_index()?;
 
+        // Index all file paths → blob mappings for retrieval (FIX for prompt pack)
+        // Use batch method for efficiency and to ensure atomic write
+        self.index_mut()?.index_file_paths(&file_blobs)?;
+
         Ok(AnalysisReport {
             files_analyzed,
             symbols_found,
@@ -799,8 +834,13 @@ to store and retrieve context across sessions.
         analyzer.shutdown()?;
 
         // Read file content for ObjectId computation
-        let file_path = path.to_string_lossy().to_string();
+        // Canonicalize to ensure absolute paths (FIX for path matching)
+        let path_canonical = path.canonicalize()?;
+        let file_path = path_canonical.to_string_lossy().to_string();
         let file_content = std::fs::read(path)?;
+
+        // Store file content as blob (FIX for prompt pack retrieval)
+        let file_blob_id = self.object_store.put_blob(&file_content)?;
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -847,6 +887,9 @@ to store and retrieve context across sessions.
 
         // Rebuild index to make edges immediately queryable
         self.rebuild_index()?;
+
+        // Index the file path → blob mapping for retrieval (FIX for prompt pack)
+        self.index_mut()?.index_file_path(&file_path, file_blob_id)?;
 
         Ok(FileAnalysisReport {
             path: path.to_path_buf(),

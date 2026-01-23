@@ -115,6 +115,7 @@ impl Default for RetrievalConfig {
                 EdgeLabel::Imports,
                 EdgeLabel::References,
                 EdgeLabel::DependsOn,
+                EdgeLabel::Defines,  // Follow File -> Item edges to find source files
             ],
             max_expanded_nodes: 50,
             narrative_days: 7,
@@ -351,7 +352,7 @@ pub fn build_pack(
         max_depth: config.expansion_depth,
         follow_labels: config.expand_labels.clone(),
         max_nodes: config.max_expanded_nodes,
-        bidirectional: false,
+        bidirectional: true,  // Follow edges in both directions to find files that define items
     };
 
     let expansion = if seeds.is_empty() {

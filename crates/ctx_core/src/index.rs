@@ -8,7 +8,7 @@
 use crate::error::{CtxError, Result};
 use crate::types::{Commit, EdgeBatch, EdgeLabel, NarrativeRef, NodeId, Tree, TreeEntryKind};
 use crate::{ObjectId, ObjectStore};
-use redb::{Database, TableDefinition};
+use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -260,6 +260,89 @@ impl Index {
         &self.path
     }
 
+    /// Adds or updates a file path → blob mapping in the index.
+    ///
+    /// This is used to manually index files that were analyzed but not yet
+    /// part of the commit tree.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctx_core::{CtxRepo, ObjectId};
+    ///
+    /// # fn main() -> ctx_core::Result<()> {
+    /// let mut repo = CtxRepo::open(".")?;
+    /// let blob_id = repo.object_store().put_blob(b"content")?;
+    /// repo.index_mut()?.index_file_path("src/lib.rs", blob_id)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn index_file_path(&mut self, path: &str, blob_id: ObjectId) -> Result<()> {
+        let write_txn = self.begin_write()?;
+
+        {
+            let mut table = write_txn.open_table(PATH_TO_ID_TABLE).map_err(|e| {
+                CtxError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to open path table: {}", e),
+                ))
+            })?;
+
+            table.insert(path, blob_id.as_bytes()).map_err(|e| {
+                CtxError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to insert path: {}", e),
+                ))
+            })?;
+        }
+
+        write_txn.commit().map_err(|e| {
+            CtxError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to commit transaction: {}", e),
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    /// Batch index multiple file paths in a single transaction.
+    /// This is more efficient than calling index_file_path() repeatedly.
+    pub fn index_file_paths(&mut self, paths: &[(String, ObjectId)]) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let write_txn = self.begin_write()?;
+
+        {
+            let mut table = write_txn.open_table(PATH_TO_ID_TABLE).map_err(|e| {
+                CtxError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to open path table: {}", e),
+                ))
+            })?;
+
+            for (path, blob_id) in paths {
+                table.insert(path.as_str(), blob_id.as_bytes()).map_err(|e| {
+                    CtxError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to insert path {}: {}", path, e),
+                    ))
+                })?;
+            }
+        }
+
+        write_txn.commit().map_err(|e| {
+            CtxError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to commit transaction: {}", e),
+            ))
+        })?;
+
+        Ok(())
+    }
+
     /// Look up a path to get its ObjectId.
     ///
     /// # Examples
@@ -448,6 +531,35 @@ impl Index {
         object_store: &ObjectStore,
         head_id: ObjectId,
     ) -> Result<Self> {
+        // First, preserve any existing file path mappings before rebuilding
+        let preserved_paths: Vec<(String, ObjectId)> = if path.as_ref().exists() {
+            match Self::open(&path)? {
+                Some(existing_index) => {
+                    let mut paths = Vec::new();
+                    if let Ok(read_txn) = existing_index.begin_read() {
+                        if let Ok(table) = read_txn.open_table(PATH_TO_ID_TABLE) {
+                            for result in table.iter().map_err(|e| {
+                                CtxError::Io(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("Failed to iterate paths: {}", e),
+                                ))
+                            })? {
+                                if let Ok((key, value)) = result {
+                                    let path_str: &str = key.value();
+                                    let obj_id = ObjectId::from_bytes(*value.value());
+                                    paths.push((path_str.to_string(), obj_id));
+                                }
+                            }
+                        }
+                    }
+                    paths
+                }
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+
         // Create fresh index
         let index = Self::create(path)?;
 
@@ -513,6 +625,11 @@ impl Index {
             for parent_id in &commit.parents {
                 queue.push_back(*parent_id);
             }
+        }
+
+        // Add preserved file path mappings back into the index
+        for (path, obj_id) in preserved_paths {
+            path_index.insert(path, obj_id);
         }
 
         // Write all collected data in a single transaction
@@ -637,6 +754,15 @@ impl Index {
             CtxError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Failed to begin read transaction: {}", e),
+            ))
+        })
+    }
+
+    fn begin_write(&self) -> Result<redb::WriteTransaction> {
+        self.db.begin_write().map_err(|e| {
+            CtxError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to begin write transaction: {}", e),
             ))
         })
     }
