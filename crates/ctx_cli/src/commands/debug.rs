@@ -105,11 +105,21 @@ fn print_typed_object(store: &ObjectStore, id: ObjectId) -> Result<()> {
     // Try Commit
     if let Ok(commit) = store.get_typed::<Commit>(id) {
         println!("Type: Commit");
-        println!("Parents: {:?}", commit.parents.iter().map(|p| p.as_hex()).collect::<Vec<_>>());
-        println!("Timestamp: {} ({})", commit.timestamp_unix,
+        println!(
+            "Parents: {:?}",
+            commit
+                .parents
+                .iter()
+                .map(|p| p.as_hex())
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "Timestamp: {} ({})",
+            commit.timestamp_unix,
             DateTime::from_timestamp(commit.timestamp_unix as i64, 0)
                 .unwrap_or_default()
-                .format("%Y-%m-%d %H:%M:%S UTC"));
+                .format("%Y-%m-%d %H:%M:%S UTC")
+        );
         println!("Message: {}", commit.message);
         println!("Root tree: {}", commit.root_tree.as_hex());
         println!("Edge batches: {} batch(es)", commit.edge_batches.len());
@@ -138,7 +148,10 @@ fn print_typed_object(store: &ObjectStore, id: ObjectId) -> Result<()> {
     // Try WorkCommit
     if let Ok(work) = store.get_typed::<WorkCommit>(id) {
         println!("Type: WorkCommit");
-        println!("Parents: {:?}", work.parents.iter().map(|p| p.as_hex()).collect::<Vec<_>>());
+        println!(
+            "Parents: {:?}",
+            work.parents.iter().map(|p| p.as_hex()).collect::<Vec<_>>()
+        );
         println!("Base: {}", work.base.as_hex());
         println!("Session ID: {}", work.session_id);
         println!("Created at: {}", work.created_at);
@@ -169,19 +182,17 @@ fn print_typed_object(store: &ObjectStore, id: ObjectId) -> Result<()> {
         println!("Type: EdgeBatch");
         println!("Created at: {}", batch.created_at);
         println!("Edges: {} edge(s)", batch.edges.len());
-        println!("(Note: To find introducing commit, query which commit references this EdgeBatch)");
+        println!(
+            "(Note: To find introducing commit, query which commit references this EdgeBatch)"
+        );
         for (i, edge) in batch.edges.iter().enumerate() {
-            println!("  [{}] {:?}:{} --{:?}--> {:?}:{}",
-                i,
-                edge.from.kind,
-                edge.from.id,
-                edge.label,
-                edge.to.kind,
-                edge.to.id
+            println!(
+                "  [{}] {:?}:{} --{:?}--> {:?}:{}",
+                i, edge.from.kind, edge.from.id, edge.label, edge.to.kind, edge.to.id
             );
-            println!("      Evidence: {:?} (confidence: {:?})",
-                edge.evidence.tool,
-                edge.evidence.confidence
+            println!(
+                "      Evidence: {:?} (confidence: {:?})",
+                edge.evidence.tool, edge.evidence.confidence
             );
         }
         return Ok(());

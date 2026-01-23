@@ -22,7 +22,9 @@ impl ScenarioRunner {
     pub fn new(initial_files: HashMap<String, Vec<u8>>) -> Result<Self> {
         let workspace = TestWorkspace::with_files(initial_files)?;
         let clock = MockClock::new();
-        let ctx = workspace.init_ctx()?.with_time_provider(clock.as_provider());
+        let ctx = workspace
+            .init_ctx()?
+            .with_time_provider(clock.as_provider());
 
         Ok(Self {
             workspace,
@@ -78,9 +80,7 @@ impl ScenarioRunner {
             ScenarioStep::WaitHours { hours } => {
                 self.handle_wait(Duration::from_secs(hours * 3600))
             }
-            ScenarioStep::WaitDays { days } => {
-                self.handle_wait(Duration::from_secs(days * 86400))
-            }
+            ScenarioStep::WaitDays { days } => self.handle_wait(Duration::from_secs(days * 86400)),
 
             ScenarioStep::Crash => self.handle_crash(),
             ScenarioStep::Restart => self.handle_restart(),
@@ -355,92 +355,145 @@ impl ScenarioRunner {
         match assertion {
             // Most assertions only need immutable access
             Assertion::SessionState(expected) => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_session_state(ctx, expected)
             }
             Assertion::NoSession => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_no_session(ctx)
             }
             Assertion::SessionExists => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_session_exists(ctx)
             }
             Assertion::CommitCount(n) => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_commit_count(ctx, *n)
             }
             Assertion::CommitCountGte(n) => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_commit_count_gte(ctx, *n)
             }
             Assertion::HeadMessageContains(text) => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_head_message_contains(ctx, text)
             }
             Assertion::FileInHead { path } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_file_in_head(ctx, path)
             }
             Assertion::FileContentContains { path, content } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_file_content_contains(ctx, path, content)
             }
             Assertion::FileNotInHead { path } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_file_not_in_head(ctx, path)
             }
             Assertion::StagingExists => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_staging_exists(ctx)
             }
             Assertion::NoStaging => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_no_staging(ctx)
             }
             Assertion::StagingChainLengthGte(n) => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_staging_chain_length_gte(ctx, *n)
             }
             Assertion::StagingContainsFile { path } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_staging_contains_file(ctx, path)
             }
             Assertion::StagingContainsNote { text } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_staging_contains_note(ctx, text)
             }
             Assertion::NoteContains(text) => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_note_contains(ctx, text)
             }
             Assertion::EdgeExists { from, to, label } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_edge_exists(ctx, from, to, label)
             }
             Assertion::QueryReturnsPath { query, path } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_query_returns_path(ctx, query, path)
             }
             Assertion::QueryTokensWithinBudget { query, budget } => {
-                let ctx = self.ctx.as_ref().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 self.assert_query_tokens_within_budget(ctx, query, *budget)
             }
             Assertion::SessionRecovered => self.assert_session_recovered(),
             Assertion::NoPanic => Ok(()), // If we're here, we didn't panic
             // Custom assertions get mutable access
             Assertion::Custom(f) => {
-                let ctx = self.ctx.as_mut().ok_or_else(|| anyhow!("CTX not available"))?;
+                let ctx = self
+                    .ctx
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("CTX not available"))?;
                 f(ctx)
             }
         }
     }
 
-    fn assert_session_state(
-        &self,
-        ctx: &CtxRepo,
-        expected: &SessionStateMatch,
-    ) -> Result<()> {
+    fn assert_session_state(&self, ctx: &CtxRepo, expected: &SessionStateMatch) -> Result<()> {
         let session = ctx
             .active_session()
             .ok_or_else(|| anyhow!("No active session"))?;
@@ -529,12 +582,7 @@ impl ScenarioRunner {
         Ok(())
     }
 
-    fn assert_file_content_contains(
-        &self,
-        ctx: &CtxRepo,
-        path: &str,
-        content: &str,
-    ) -> Result<()> {
+    fn assert_file_content_contains(&self, ctx: &CtxRepo, path: &str, content: &str) -> Result<()> {
         let head = ctx.head()?;
         let tree: Tree = ctx.object_store().get_typed(head.root_tree)?;
 
@@ -570,7 +618,9 @@ impl ScenarioRunner {
     fn assert_staging_exists(&self, ctx: &CtxRepo) -> Result<()> {
         match ctx.refs().read_stage()? {
             Some(_) => Ok(()),
-            None => Err(anyhow!("Expected staging to exist, but STAGE ref not found")),
+            None => Err(anyhow!(
+                "Expected staging to exist, but STAGE ref not found"
+            )),
         }
     }
 
@@ -605,7 +655,13 @@ impl ScenarioRunner {
         Ok(())
     }
 
-    fn assert_edge_exists(&self, _ctx: &CtxRepo, _from: &str, _to: &str, _label: &str) -> Result<()> {
+    fn assert_edge_exists(
+        &self,
+        _ctx: &CtxRepo,
+        _from: &str,
+        _to: &str,
+        _label: &str,
+    ) -> Result<()> {
         // TODO: Implement edge checking
         // Would need to load edge batches and search
         Ok(())

@@ -265,8 +265,8 @@ pub fn run_cargo_metadata(path: &Path) -> Result<String> {
 ///
 /// Returns an error if the JSON is malformed or doesn't match expected schema.
 pub fn parse_cargo_metadata(json: &str) -> Result<CargoMetadataSnapshot> {
-    let value: Value =
-        serde_json::from_str(json).map_err(|e| CtxError::CargoMetadataParseFailed(e.to_string()))?;
+    let value: Value = serde_json::from_str(json)
+        .map_err(|e| CtxError::CargoMetadataParseFailed(e.to_string()))?;
 
     let workspace_root = value["workspace_root"]
         .as_str()

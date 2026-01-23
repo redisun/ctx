@@ -18,9 +18,7 @@ pub struct AdjacencyList {
 
 impl AdjacencyList {
     /// Build adjacency list from edge batches.
-    pub fn from_edge_batches<'a>(
-        batches: impl Iterator<Item = &'a EdgeBatch>,
-    ) -> Self {
+    pub fn from_edge_batches<'a>(batches: impl Iterator<Item = &'a EdgeBatch>) -> Self {
         let mut forward: BTreeMap<NodeId, Vec<(EdgeLabel, NodeId)>> = BTreeMap::new();
         let mut backward: BTreeMap<NodeId, Vec<(EdgeLabel, NodeId)>> = BTreeMap::new();
         let mut nodes = BTreeSet::new();
@@ -42,7 +40,11 @@ impl AdjacencyList {
             }
         }
 
-        Self { forward, backward, nodes }
+        Self {
+            forward,
+            backward,
+            nodes,
+        }
     }
 
     /// Get outgoing edges for a node.
@@ -484,7 +486,11 @@ pub fn adjacency_to_dot(adjacency: &AdjacencyList) -> String {
             _ => format!("{:?}: {}", node.kind, node.id),
         };
         node_labels.insert(node, format!("n{}", i));
-        output.push_str(&format!("  n{} [label=\"{}\"];\n", i, escape_dot_label(&label)));
+        output.push_str(&format!(
+            "  n{} [label=\"{}\"];\n",
+            i,
+            escape_dot_label(&label)
+        ));
     }
 
     output.push('\n');
@@ -494,10 +500,7 @@ pub fn adjacency_to_dot(adjacency: &AdjacencyList) -> String {
         let from = &node_labels[node];
         for (label, target) in adjacency.outgoing(node) {
             let to = &node_labels[target];
-            output.push_str(&format!(
-                "  {} -> {} [label=\"{:?}\"];\n",
-                from, to, label
-            ));
+            output.push_str(&format!("  {} -> {} [label=\"{:?}\"];\n", from, to, label));
         }
     }
 

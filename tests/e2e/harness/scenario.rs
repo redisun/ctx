@@ -25,14 +25,16 @@ impl Scenario {
 
     /// Add a single file to initial workspace
     pub fn with_file(mut self, path: &str, content: &[u8]) -> Self {
-        self.initial_files.insert(path.to_string(), content.to_vec());
+        self.initial_files
+            .insert(path.to_string(), content.to_vec());
         self
     }
 
     /// Add multiple files to initial workspace
     pub fn with_files(mut self, files: HashMap<&str, &[u8]>) -> Self {
         for (path, content) in files {
-            self.initial_files.insert(path.to_string(), content.to_vec());
+            self.initial_files
+                .insert(path.to_string(), content.to_vec());
         }
         self
     }

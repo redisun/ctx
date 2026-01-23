@@ -4,8 +4,9 @@
 
 pub use lsp_types::{
     CallHierarchyClientCapabilities, CallHierarchyIncomingCall, CallHierarchyItem,
-    CallHierarchyOutgoingCall, ClientCapabilities, DocumentSymbol, DocumentSymbolClientCapabilities,
-    InitializeParams, InitializeResult, Location, Position, Range, TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
+    CallHierarchyOutgoingCall, ClientCapabilities, DocumentSymbol,
+    DocumentSymbolClientCapabilities, InitializeParams, InitializeResult, Location, Position,
+    Range, TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
     TextDocumentPositionParams, Url,
 };
 

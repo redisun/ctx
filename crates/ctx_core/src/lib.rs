@@ -86,10 +86,13 @@ mod types;
 mod verify;
 
 pub use cargo::{
-    CargoAnalysisReport, CargoMetadataSnapshot, DepKind, DepKindInfo, Package, PackageDep,
-    Resolve, ResolvedDep, ResolveNode, Target, TargetKind,
+    CargoAnalysisReport, CargoMetadataSnapshot, DepKind, DepKindInfo, Package, PackageDep, Resolve,
+    ResolveNode, ResolvedDep, Target, TargetKind,
 };
-pub use config::{CleanupReport, Config, GcConfig as ConfigGcConfig, SearchConfig, SessionConfig, StaleSessionConfig, StaleSessionStatus, StorageConfig};
+pub use config::{
+    CleanupReport, Config, GcConfig as ConfigGcConfig, SearchConfig, SessionConfig,
+    StaleSessionConfig, StaleSessionStatus, StorageConfig,
+};
 pub use error::{CtxError, Result};
 pub use gc::{gc, GcConfig, GcReport};
 pub use graph::{

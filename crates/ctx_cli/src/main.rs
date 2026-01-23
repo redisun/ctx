@@ -310,7 +310,10 @@ fn main() -> Result<()> {
             AnalyzeCommands::Cargo => commands::analyze::analyze_cargo(),
             AnalyzeCommands::Status => commands::analyze::status(),
         },
-        Commands::Gc { dry_run, aggressive } => commands::gc::run(dry_run, aggressive),
+        Commands::Gc {
+            dry_run,
+            aggressive,
+        } => commands::gc::run(dry_run, aggressive),
         Commands::Verify { objects, full } => commands::verify::run(objects, full),
     }
 }

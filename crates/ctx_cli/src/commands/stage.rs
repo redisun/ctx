@@ -8,12 +8,11 @@ use ctx_core::CtxRepo;
 /// This allows CLI commands to work across multiple invocations by reconstructing
 /// the session state from the staging area.
 fn ensure_session_recovered(repo: &mut CtxRepo) -> Result<()> {
-    if !repo.has_active_session()
-        && repo.recover_session()?.is_none() {
-            return Err(anyhow::anyhow!(
-                "No active session. Use 'ctx stage start' first."
-            ));
-        }
+    if !repo.has_active_session() && repo.recover_session()?.is_none() {
+        return Err(anyhow::anyhow!(
+            "No active session. Use 'ctx stage start' first."
+        ));
+    }
     Ok(())
 }
 

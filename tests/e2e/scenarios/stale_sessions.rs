@@ -40,7 +40,10 @@ fn test_very_stale_auto_compacts() {
         .wait_days(10) // Past 7d auto-compact threshold
         .assert(Assertion::Custom(Box::new(|ctx| {
             let status = ctx.check_stale_session(&StaleSessionConfig::default());
-            assert!(matches!(status, StaleSessionStatus::ShouldAutoCompact { .. }));
+            assert!(matches!(
+                status,
+                StaleSessionStatus::ShouldAutoCompact { .. }
+            ));
             Ok(())
         })))
         .run()

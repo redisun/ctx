@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use console::style;
-use ctx_core::{VerifyConfig, CtxRepo};
+use ctx_core::{CtxRepo, VerifyConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// Verify repository integrity.
@@ -62,26 +62,44 @@ pub fn run(objects: bool, full: bool) -> Result<()> {
     println!("{}", style("Verification Report:").bold());
 
     if check_objects {
-        println!("  Objects checked:    {}", style(report.objects_checked).cyan());
+        println!(
+            "  Objects checked:    {}",
+            style(report.objects_checked).cyan()
+        );
         if !report.objects_corrupted.is_empty() {
-            println!("  Corrupted objects:  {}", style(report.objects_corrupted.len()).red());
+            println!(
+                "  Corrupted objects:  {}",
+                style(report.objects_corrupted.len()).red()
+            );
             for id in &report.objects_corrupted {
                 println!("    {} {}", style("×").red(), id.as_hex());
             }
         }
     }
 
-    println!("  Refs checked:       {}", style(report.refs_checked).cyan());
+    println!(
+        "  Refs checked:       {}",
+        style(report.refs_checked).cyan()
+    );
     if !report.refs_dangling.is_empty() {
-        println!("  Dangling refs:      {}", style(report.refs_dangling.len()).yellow());
+        println!(
+            "  Dangling refs:      {}",
+            style(report.refs_dangling.len()).yellow()
+        );
         for ref_name in &report.refs_dangling {
             println!("    {} {}", style("⚠").yellow(), ref_name);
         }
     }
 
-    println!("  Commits checked:    {}", style(report.commits_checked).cyan());
+    println!(
+        "  Commits checked:    {}",
+        style(report.commits_checked).cyan()
+    );
     if !report.commits_invalid.is_empty() {
-        println!("  Invalid commits:    {}", style(report.commits_invalid.len()).red());
+        println!(
+            "  Invalid commits:    {}",
+            style(report.commits_invalid.len()).red()
+        );
         for id in &report.commits_invalid {
             println!("    {} {}", style("×").red(), id.as_hex());
         }
@@ -91,27 +109,39 @@ pub fn run(objects: bool, full: bool) -> Result<()> {
     if report.has_issues() {
         println!("{}", style(&report.summary()).yellow().bold());
     } else {
-        println!("{} {}", style("✓").green(), style(&report.summary()).green());
+        println!(
+            "{} {}",
+            style("✓").green(),
+            style(&report.summary()).green()
+        );
     }
 
     if report.has_issues() {
         println!();
         println!("{}", style("Recommendations:").bold());
         if !report.objects_corrupted.is_empty() {
-            println!("  {} Run {} to remove corrupted objects",
+            println!(
+                "  {} Run {} to remove corrupted objects",
                 style("→").cyan(),
-                style("ctx gc").cyan());
+                style("ctx gc").cyan()
+            );
         }
         if !report.refs_dangling.is_empty() {
-            println!("  {} Dangling refs may indicate incomplete operations",
-                style("→").cyan());
+            println!(
+                "  {} Dangling refs may indicate incomplete operations",
+                style("→").cyan()
+            );
         }
         if !report.commits_invalid.is_empty() {
-            println!("  {} Invalid commits may require manual recovery",
-                style("→").cyan());
-            println!("  {} Try {} to regenerate the index",
+            println!(
+                "  {} Invalid commits may require manual recovery",
+                style("→").cyan()
+            );
+            println!(
+                "  {} Try {} to regenerate the index",
                 style("→").cyan(),
-                style("ctx rebuild").cyan());
+                style("ctx rebuild").cyan()
+            );
         }
     }
 

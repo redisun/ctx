@@ -41,8 +41,7 @@ impl Default for GcConfig {
 }
 
 /// Report from garbage collection operation.
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct GcReport {
     /// Total number of objects scanned.
     pub objects_scanned: usize,
@@ -59,7 +58,6 @@ pub struct GcReport {
     /// Errors encountered during GC (non-fatal).
     pub errors: Vec<String>,
 }
-
 
 /// Run garbage collection on the repository.
 ///
@@ -116,7 +114,8 @@ pub fn gc(
     if let Some(cb) = progress {
         cb(2, 3, "sweep");
     }
-    let (deleted, bytes_freed) = sweep_unreachable(object_store, &reachable, &config, &mut report, progress)?;
+    let (deleted, bytes_freed) =
+        sweep_unreachable(object_store, &reachable, &config, &mut report, progress)?;
 
     report.objects_deleted = deleted;
     report.bytes_freed = bytes_freed;

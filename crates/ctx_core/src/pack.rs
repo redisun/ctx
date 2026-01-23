@@ -115,7 +115,7 @@ impl Default for RetrievalConfig {
                 EdgeLabel::Imports,
                 EdgeLabel::References,
                 EdgeLabel::DependsOn,
-                EdgeLabel::Defines,  // Follow File -> Item edges to find source files
+                EdgeLabel::Defines, // Follow File -> Item edges to find source files
             ],
             max_expanded_nodes: 50,
             narrative_days: 7,
@@ -140,7 +140,9 @@ impl PromptPack {
         output.push_str(&format!("**Commit:** {}\n", self.head_commit));
         output.push_str(&format!(
             "**Tokens:** {}/{} (reserved: {})\n\n",
-            self.token_budget.used, self.token_budget.total, self.token_budget.reserved_for_response
+            self.token_budget.used,
+            self.token_budget.total,
+            self.token_budget.reserved_for_response
         ));
 
         output.push_str("## Graph Context\n\n");
@@ -332,11 +334,7 @@ pub fn estimate_tokens(text: &str) -> u32 {
 /// 1. Borrow index, collect what we need, drop the borrow
 /// 2. Borrow object_store or narrative as needed
 /// 3. The scoped blocks make these borrow lifetimes explicit
-pub fn build_pack(
-    repo: &mut CtxRepo,
-    query: &str,
-    config: &RetrievalConfig,
-) -> Result<PromptPack> {
+pub fn build_pack(repo: &mut CtxRepo, query: &str, config: &RetrievalConfig) -> Result<PromptPack> {
     let head_commit = repo.head_id()?;
 
     // Step 1: Identify seeds from the query
@@ -352,7 +350,7 @@ pub fn build_pack(
         max_depth: config.expansion_depth,
         follow_labels: config.expand_labels.clone(),
         max_nodes: config.max_expanded_nodes,
-        bidirectional: true,  // Follow edges in both directions to find files that define items
+        bidirectional: true, // Follow edges in both directions to find files that define items
     };
 
     let expansion = if seeds.is_empty() {
@@ -418,41 +416,41 @@ pub fn build_pack(
     if config.include_active_task || config.include_log {
         let narrative = repo.narrative();
         if let Ok(files) = narrative.list_files() {
-                // Look for task files
-                if config.include_active_task {
-                    for file in &files {
-                        if file.starts_with("tasks/") && file.ends_with(".md") {
-                            if let Ok(content_bytes) = narrative.read_file(file) {
-                                if let Ok(content) = String::from_utf8(content_bytes) {
-                                    narrative_content.push_str(&format!("## Task: {}\n\n", file));
-                                    narrative_content.push_str(&content);
-                                    narrative_content.push_str("\n\n");
-                                    break; // Just include first task for now
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Look for log files
-                if config.include_log {
-                    let mut log_files: Vec<_> = files
-                        .iter()
-                        .filter(|f| f.starts_with("log/") && f.ends_with(".md"))
-                        .collect();
-                    log_files.sort();
-                    log_files.reverse(); // Most recent first
-
-                    for file in log_files.iter().take(5) {
+            // Look for task files
+            if config.include_active_task {
+                for file in &files {
+                    if file.starts_with("tasks/") && file.ends_with(".md") {
                         if let Ok(content_bytes) = narrative.read_file(file) {
                             if let Ok(content) = String::from_utf8(content_bytes) {
-                                narrative_content.push_str(&format!("## Log: {}\n\n", file));
+                                narrative_content.push_str(&format!("## Task: {}\n\n", file));
                                 narrative_content.push_str(&content);
                                 narrative_content.push_str("\n\n");
+                                break; // Just include first task for now
                             }
                         }
                     }
                 }
+            }
+
+            // Look for log files
+            if config.include_log {
+                let mut log_files: Vec<_> = files
+                    .iter()
+                    .filter(|f| f.starts_with("log/") && f.ends_with(".md"))
+                    .collect();
+                log_files.sort();
+                log_files.reverse(); // Most recent first
+
+                for file in log_files.iter().take(5) {
+                    if let Ok(content_bytes) = narrative.read_file(file) {
+                        if let Ok(content) = String::from_utf8(content_bytes) {
+                            narrative_content.push_str(&format!("## Log: {}\n\n", file));
+                            narrative_content.push_str(&content);
+                            narrative_content.push_str("\n\n");
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -480,7 +478,10 @@ pub fn build_pack(
 
     // Build graph context
     let graph_context = GraphContext {
-        seed_nodes: seeds.iter().map(|n| format!("{:?}::{}", n.kind, n.id)).collect(),
+        seed_nodes: seeds
+            .iter()
+            .map(|n| format!("{:?}::{}", n.kind, n.id))
+            .collect(),
         expanded_nodes: expansion
             .expanded_nodes
             .iter()

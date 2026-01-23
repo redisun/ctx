@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use console::style;
-use ctx_core::{GcConfig, CtxRepo};
+use ctx_core::{CtxRepo, GcConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 
 /// Run garbage collection.
@@ -16,24 +16,34 @@ pub fn run(dry_run: bool, aggressive: bool) -> Result<()> {
     };
 
     if dry_run {
-        println!("{} Running GC in dry-run mode (no objects will be deleted)...",
-            style("→").cyan());
+        println!(
+            "{} Running GC in dry-run mode (no objects will be deleted)...",
+            style("→").cyan()
+        );
     } else {
         // Safety: warn user and require confirmation for real deletion
         println!();
-        println!("{} {}", style("⚠").yellow().bold(), style("WARNING:").yellow().bold());
+        println!(
+            "{} {}",
+            style("⚠").yellow().bold(),
+            style("WARNING:").yellow().bold()
+        );
         println!("  Garbage collection will permanently delete unreferenced objects.");
         if aggressive {
-            println!("  {} mode: No grace period - deletes all unreachable objects immediately.",
-                style("Aggressive").red());
+            println!(
+                "  {} mode: No grace period - deletes all unreachable objects immediately.",
+                style("Aggressive").red()
+            );
         } else {
             println!("  Grace period: {} days", config.grace_period_days);
             println!("  Objects newer than this will be kept even if unreachable.");
         }
         println!();
-        println!("  {} Run with {} first to see what would be deleted.",
+        println!(
+            "  {} Run with {} first to see what would be deleted.",
             style("Tip:").cyan(),
-            style("--dry-run").cyan());
+            style("--dry-run").cyan()
+        );
         println!();
 
         // Require confirmation
@@ -50,11 +60,16 @@ pub fn run(dry_run: bool, aggressive: bool) -> Result<()> {
         }
 
         if aggressive {
-            println!("{} Running aggressive GC (no grace period)...",
-                style("→").yellow());
+            println!(
+                "{} Running aggressive GC (no grace period)...",
+                style("→").yellow()
+            );
         } else {
-            println!("{} Running GC with {}-day grace period...",
-                style("→").cyan(), config.grace_period_days);
+            println!(
+                "{} Running GC with {}-day grace period...",
+                style("→").cyan(),
+                config.grace_period_days
+            );
         }
     }
 
@@ -79,16 +94,24 @@ pub fn run(dry_run: bool, aggressive: bool) -> Result<()> {
 
     println!();
     println!("{}", style("Garbage Collection Report:").bold());
-    println!("  Objects scanned:   {}", style(report.objects_scanned).cyan());
-    println!("  Objects reachable: {}", style(report.objects_reachable).green());
-    println!("  Objects deleted:   {}",
+    println!(
+        "  Objects scanned:   {}",
+        style(report.objects_scanned).cyan()
+    );
+    println!(
+        "  Objects reachable: {}",
+        style(report.objects_reachable).green()
+    );
+    println!(
+        "  Objects deleted:   {}",
         if report.objects_deleted > 0 {
             style(report.objects_deleted).yellow()
         } else {
             style(report.objects_deleted).green()
         }
     );
-    println!("  Bytes freed:       {} ({:.2} MB)",
+    println!(
+        "  Bytes freed:       {} ({:.2} MB)",
         style(format!("{}", report.bytes_freed)).cyan(),
         report.bytes_freed as f64 / 1_048_576.0
     );
@@ -108,7 +131,8 @@ pub fn run(dry_run: bool, aggressive: bool) -> Result<()> {
         println!("  {}", style("ctx gc").cyan());
     } else if !dry_run && report.objects_deleted > 0 {
         println!();
-        println!("{} Successfully freed {:.2} MB",
+        println!(
+            "{} Successfully freed {:.2} MB",
             style("✓").green(),
             report.bytes_freed as f64 / 1_048_576.0
         );

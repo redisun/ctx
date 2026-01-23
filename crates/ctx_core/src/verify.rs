@@ -73,7 +73,10 @@ impl VerifyReport {
         } else {
             let mut issues = Vec::new();
             if !self.objects_corrupted.is_empty() {
-                issues.push(format!("{} corrupted objects", self.objects_corrupted.len()));
+                issues.push(format!(
+                    "{} corrupted objects",
+                    self.objects_corrupted.len()
+                ));
             }
             if !self.refs_dangling.is_empty() {
                 issues.push(format!("{} dangling refs", self.refs_dangling.len()));
@@ -294,7 +297,9 @@ mod tests {
         assert!(report.summary().contains("healthy"));
 
         let mut report2 = VerifyReport::default();
-        report2.objects_corrupted.push(ObjectId::from_bytes([0; 32]));
+        report2
+            .objects_corrupted
+            .push(ObjectId::from_bytes([0; 32]));
         assert!(report2.has_issues());
         assert!(report2.summary().contains("corrupted"));
     }

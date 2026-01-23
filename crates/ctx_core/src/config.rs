@@ -7,8 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 /// Comprehensive configuration for CTX repository.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     /// Storage-related configuration.
     #[serde(default)]
@@ -26,7 +25,6 @@ pub struct Config {
     #[serde(default)]
     pub session: SessionConfig,
 }
-
 
 impl Config {
     /// Load configuration from a file.
@@ -146,7 +144,7 @@ pub struct StaleSessionConfig {
 impl Default for StaleSessionConfig {
     fn default() -> Self {
         Self {
-            ask_threshold_secs: 24 * 60 * 60,          // 24 hours
+            ask_threshold_secs: 24 * 60 * 60,              // 24 hours
             auto_compact_threshold_secs: 7 * 24 * 60 * 60, // 7 days
         }
     }

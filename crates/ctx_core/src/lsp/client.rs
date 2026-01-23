@@ -123,8 +123,8 @@ impl LspClient {
         let id = self.next_id;
         self.next_id += 1;
 
-        let params_value = serde_json::to_value(params)
-            .map_err(|e| CtxError::Serialization(e.to_string()))?;
+        let params_value =
+            serde_json::to_value(params).map_err(|e| CtxError::Serialization(e.to_string()))?;
 
         let request = JsonRpcMessage::request(id, method, params_value);
 
@@ -176,8 +176,8 @@ impl LspClient {
     /// * `method` - LSP method name
     /// * `params` - Notification parameters
     pub fn notify<P: Serialize>(&mut self, method: &str, params: P) -> Result<()> {
-        let params_value = serde_json::to_value(params)
-            .map_err(|e| CtxError::Serialization(e.to_string()))?;
+        let params_value =
+            serde_json::to_value(params).map_err(|e| CtxError::Serialization(e.to_string()))?;
 
         let notification = JsonRpcMessage::notification(method, params_value);
 
@@ -237,8 +237,8 @@ impl LspClient {
 
     /// Send a JSON-RPC message.
     fn send_message(&mut self, message: &JsonRpcMessage) -> Result<()> {
-        let json = serde_json::to_string(message)
-            .map_err(|e| CtxError::Serialization(e.to_string()))?;
+        let json =
+            serde_json::to_string(message).map_err(|e| CtxError::Serialization(e.to_string()))?;
 
         // Write Content-Length header
         write!(self.stdin, "Content-Length: {}\r\n\r\n", json.len())?;
@@ -268,11 +268,10 @@ impl LspClient {
 
             // Parse Content-Length header
             if let Some(len_str) = line.strip_prefix("Content-Length: ") {
-                content_length = Some(
-                    len_str
-                        .parse()
-                        .map_err(|_| CtxError::LspProtocolError("invalid Content-Length".into()))?,
-                );
+                content_length =
+                    Some(len_str.parse().map_err(|_| {
+                        CtxError::LspProtocolError("invalid Content-Length".into())
+                    })?);
             }
         }
 

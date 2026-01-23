@@ -7,14 +7,15 @@ use crate::error::Result;
 use crate::lsp::client::LspClient;
 use crate::lsp::protocol::{
     CallHierarchyClientCapabilities, ClientCapabilities, DocumentSymbol,
-    DocumentSymbolClientCapabilities, InitializeParams, Position, Range, TextDocumentClientCapabilities, Url,
+    DocumentSymbolClientCapabilities, InitializeParams, Position, Range,
+    TextDocumentClientCapabilities, Url,
 };
 use crate::lsp::queries::LspQueries;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 use tracing::debug;
 
 /// High-level rust-analyzer manager.
@@ -206,8 +207,7 @@ impl RustAnalyzer {
                     // Use the start position of the selection range, which should be on the symbol name
                     // According to LSP spec, prepareCallHierarchy should be called at the symbol name position
                     let position = item.range.start;
-                    let hierarchy_items =
-                        queries.prepare_call_hierarchy(&uri, position)?;
+                    let hierarchy_items = queries.prepare_call_hierarchy(&uri, position)?;
 
                     if hierarchy_items.is_empty() {
                         debug!(
@@ -400,7 +400,9 @@ impl RustAnalyzer {
                 lsp_types::SymbolKind::INTERFACE => ItemKind::Trait,
                 lsp_types::SymbolKind::CONSTANT => ItemKind::Const,
                 lsp_types::SymbolKind::VARIABLE => ItemKind::Static,
-                lsp_types::SymbolKind::MODULE | lsp_types::SymbolKind::NAMESPACE => ItemKind::Module,
+                lsp_types::SymbolKind::MODULE | lsp_types::SymbolKind::NAMESPACE => {
+                    ItemKind::Module
+                }
                 lsp_types::SymbolKind::CLASS => ItemKind::Impl,
                 _ => ItemKind::Other,
             };

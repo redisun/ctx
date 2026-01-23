@@ -22,11 +22,12 @@ pub fn walk_staging_chain(
             break;
         }
 
-        let work: WorkCommit = object_store
-            .get_typed(current)
-            .map_err(|_| CtxError::StagingCorrupted {
-                reason: format!("Missing WorkCommit: {}", current.as_hex()),
-            })?;
+        let work: WorkCommit =
+            object_store
+                .get_typed(current)
+                .map_err(|_| CtxError::StagingCorrupted {
+                    reason: format!("Missing WorkCommit: {}", current.as_hex()),
+                })?;
 
         chain.push((current, work.clone()));
 
@@ -213,8 +214,16 @@ fn build_tree_from_paths(
     // Sort directory paths by depth (deepest first)
     let mut sorted_dirs: Vec<String> = dir_structure.keys().cloned().collect();
     sorted_dirs.sort_by(|a, b| {
-        let depth_a = if a.is_empty() { 0 } else { a.matches('/').count() + 1 };
-        let depth_b = if b.is_empty() { 0 } else { b.matches('/').count() + 1 };
+        let depth_a = if a.is_empty() {
+            0
+        } else {
+            a.matches('/').count() + 1
+        };
+        let depth_b = if b.is_empty() {
+            0
+        } else {
+            b.matches('/').count() + 1
+        };
         depth_b.cmp(&depth_a) // Reverse order (deepest first)
     });
 
@@ -285,9 +294,8 @@ fn collect_narrative_refs_from_chain(chain: &[(ObjectId, WorkCommit)]) -> Vec<Na
 }
 
 fn decode_observations(payload: &[u8]) -> Result<Vec<Observation>> {
-    postcard::from_bytes(payload).map_err(|e| {
-        CtxError::Deserialization(format!("Failed to decode observations: {}", e))
-    })
+    postcard::from_bytes(payload)
+        .map_err(|e| CtxError::Deserialization(format!("Failed to decode observations: {}", e)))
 }
 
 /// Extracts edges from observations and creates EdgeBatch objects.
@@ -352,10 +360,7 @@ fn extract_edges_from_observations(
     // Note: We don't store which commit introduces this batch - that can be
     // derived by querying which commit references this EdgeBatch's ObjectId.
     // This avoids self-reference issues in content-addressed storage.
-    let edge_batch = EdgeBatch {
-        edges,
-        created_at,
-    };
+    let edge_batch = EdgeBatch { edges, created_at };
 
     // Store EdgeBatch
     let edge_batch_id = object_store.put_typed(&edge_batch)?;
@@ -493,14 +498,8 @@ mod tests {
         let work1 = create_work_commit(&store, base_id, base_id, vec![]);
         let work2 = create_work_commit(&store, work1, base_id, vec![]);
 
-        let commit = compact_staging(
-            work2,
-            base_id,
-            "Completed task",
-            CommitType::Normal,
-            &store,
-        )
-        .unwrap();
+        let commit =
+            compact_staging(work2, base_id, "Completed task", CommitType::Normal, &store).unwrap();
 
         assert_eq!(commit.parents, vec![base_id]);
         assert_eq!(commit.message, "Completed task");
@@ -509,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_build_tree_from_observations() {
-        use crate::types::{TreeEntryKind};
+        use crate::types::TreeEntryKind;
 
         let tmp = TempDir::new().unwrap();
         let store = ObjectStore::new(tmp.path().join("objects"));
@@ -644,8 +643,7 @@ mod tests {
         assert_eq!(edge_batch_ids.len(), 1);
 
         // Load the EdgeBatch
-        let edge_batch: crate::types::EdgeBatch =
-            store.get_typed(edge_batch_ids[0]).unwrap();
+        let edge_batch: crate::types::EdgeBatch = store.get_typed(edge_batch_ids[0]).unwrap();
 
         // Should have 2 edges (one per file write, not for read or note)
         assert_eq!(edge_batch.edges.len(), 2);

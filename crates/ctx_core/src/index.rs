@@ -324,12 +324,14 @@ impl Index {
             })?;
 
             for (path, blob_id) in paths {
-                table.insert(path.as_str(), blob_id.as_bytes()).map_err(|e| {
-                    CtxError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to insert path {}: {}", path, e),
-                    ))
-                })?;
+                table
+                    .insert(path.as_str(), blob_id.as_bytes())
+                    .map_err(|e| {
+                        CtxError::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Failed to insert path {}: {}", path, e),
+                        ))
+                    })?;
             }
         }
 
@@ -366,8 +368,12 @@ impl Index {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn add_commit_edges(&mut self, commit_id: ObjectId, commit: &Commit, edge_batches: &[crate::types::EdgeBatch]) -> Result<()> {
-
+    pub fn add_commit_edges(
+        &mut self,
+        commit_id: ObjectId,
+        commit: &Commit,
+        edge_batches: &[crate::types::EdgeBatch],
+    ) -> Result<()> {
         let write_txn = self.begin_write()?;
 
         // Cache commit info
@@ -383,17 +389,18 @@ impl Index {
             let serialized = postcard::to_allocvec(&commit_info)
                 .map_err(|e| CtxError::Serialization(e.to_string()))?;
 
-            table.insert(commit_id.as_bytes(), serialized.as_slice()).map_err(|e| {
-                CtxError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to insert commit info: {}", e),
-                ))
-            })?;
+            table
+                .insert(commit_id.as_bytes(), serialized.as_slice())
+                .map_err(|e| {
+                    CtxError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to insert commit info: {}", e),
+                    ))
+                })?;
         }
 
         // Process all edge batches from this commit
         for batch in edge_batches {
-
             // Index adjacency and names
             {
                 let mut adjacency_table = write_txn.open_table(ADJACENCY_TABLE).map_err(|e| {
@@ -412,7 +419,8 @@ impl Index {
 
                 for edge in &batch.edges {
                     // Add outgoing adjacency
-                    let out_key = encode_adjacency_key(&edge.from, EdgeDirection::Outgoing, edge.label);
+                    let out_key =
+                        encode_adjacency_key(&edge.from, EdgeDirection::Outgoing, edge.label);
                     let mut out_set: BTreeSet<NodeId> = adjacency_table
                         .get(out_key.as_slice())
                         .ok()
@@ -422,15 +430,18 @@ impl Index {
                     out_set.insert(edge.to.clone());
                     let serialized = postcard::to_allocvec(&out_set)
                         .map_err(|e| CtxError::Serialization(e.to_string()))?;
-                    adjacency_table.insert(out_key.as_slice(), serialized.as_slice()).map_err(|e| {
-                        CtxError::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to insert adjacency: {}", e),
-                        ))
-                    })?;
+                    adjacency_table
+                        .insert(out_key.as_slice(), serialized.as_slice())
+                        .map_err(|e| {
+                            CtxError::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("Failed to insert adjacency: {}", e),
+                            ))
+                        })?;
 
                     // Add incoming adjacency
-                    let in_key = encode_adjacency_key(&edge.to, EdgeDirection::Incoming, edge.label);
+                    let in_key =
+                        encode_adjacency_key(&edge.to, EdgeDirection::Incoming, edge.label);
                     let mut in_set: BTreeSet<NodeId> = adjacency_table
                         .get(in_key.as_slice())
                         .ok()
@@ -440,12 +451,14 @@ impl Index {
                     in_set.insert(edge.from.clone());
                     let serialized = postcard::to_allocvec(&in_set)
                         .map_err(|e| CtxError::Serialization(e.to_string()))?;
-                    adjacency_table.insert(in_key.as_slice(), serialized.as_slice()).map_err(|e| {
-                        CtxError::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Failed to insert adjacency: {}", e),
-                        ))
-                    })?;
+                    adjacency_table
+                        .insert(in_key.as_slice(), serialized.as_slice())
+                        .map_err(|e| {
+                            CtxError::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("Failed to insert adjacency: {}", e),
+                            ))
+                        })?;
 
                     // Add name index for from node
                     if let Some(namespace) = node_kind_to_namespace(edge.from.kind) {
@@ -458,20 +471,24 @@ impl Index {
                             .ok()
                             .flatten()
                             .and_then(|v| {
-                                let ids_bytes: Vec<[u8; 32]> = postcard::from_bytes(v.value()).ok()?;
+                                let ids_bytes: Vec<[u8; 32]> =
+                                    postcard::from_bytes(v.value()).ok()?;
                                 Some(ids_bytes.into_iter().map(ObjectId::from_bytes).collect())
                             })
                             .unwrap_or_default();
                         id_set.insert(object_id);
-                        let ids_bytes: Vec<[u8; 32]> = id_set.iter().map(|id| *id.as_bytes()).collect();
+                        let ids_bytes: Vec<[u8; 32]> =
+                            id_set.iter().map(|id| *id.as_bytes()).collect();
                         let serialized = postcard::to_allocvec(&ids_bytes)
                             .map_err(|e| CtxError::Serialization(e.to_string()))?;
-                        name_table.insert(key.as_slice(), serialized.as_slice()).map_err(|e| {
-                            CtxError::Io(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("Failed to insert name index: {}", e),
-                            ))
-                        })?;
+                        name_table
+                            .insert(key.as_slice(), serialized.as_slice())
+                            .map_err(|e| {
+                                CtxError::Io(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("Failed to insert name index: {}", e),
+                                ))
+                            })?;
                     }
 
                     // Add name index for to node
@@ -485,20 +502,24 @@ impl Index {
                             .ok()
                             .flatten()
                             .and_then(|v| {
-                                let ids_bytes: Vec<[u8; 32]> = postcard::from_bytes(v.value()).ok()?;
+                                let ids_bytes: Vec<[u8; 32]> =
+                                    postcard::from_bytes(v.value()).ok()?;
                                 Some(ids_bytes.into_iter().map(ObjectId::from_bytes).collect())
                             })
                             .unwrap_or_default();
                         id_set.insert(object_id);
-                        let ids_bytes: Vec<[u8; 32]> = id_set.iter().map(|id| *id.as_bytes()).collect();
+                        let ids_bytes: Vec<[u8; 32]> =
+                            id_set.iter().map(|id| *id.as_bytes()).collect();
                         let serialized = postcard::to_allocvec(&ids_bytes)
                             .map_err(|e| CtxError::Serialization(e.to_string()))?;
-                        name_table.insert(key.as_slice(), serialized.as_slice()).map_err(|e| {
-                            CtxError::Io(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("Failed to insert name index: {}", e),
-                            ))
-                        })?;
+                        name_table
+                            .insert(key.as_slice(), serialized.as_slice())
+                            .map_err(|e| {
+                                CtxError::Io(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("Failed to insert name index: {}", e),
+                                ))
+                            })?;
                     }
                 }
             }

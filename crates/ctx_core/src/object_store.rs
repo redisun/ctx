@@ -279,9 +279,7 @@ impl ObjectStore {
                 // Get file metadata
                 let metadata = fs::metadata(&obj_path)?;
                 let size = metadata.len();
-                let mtime = metadata
-                    .modified()
-                    .unwrap_or_else(|_| SystemTime::now());
+                let mtime = metadata.modified().unwrap_or_else(|_| SystemTime::now());
 
                 objects.push((id, size, mtime));
             }

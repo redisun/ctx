@@ -75,7 +75,11 @@ impl std::fmt::Debug for Assertion {
             Self::HeadMessageContains(s) => write!(f, "HeadMessageContains({:?})", s),
             Self::FileInHead { path } => write!(f, "FileInHead {{ path: {:?} }}", path),
             Self::FileContentContains { path, content } => {
-                write!(f, "FileContentContains {{ path: {:?}, content: {:?} }}", path, content)
+                write!(
+                    f,
+                    "FileContentContains {{ path: {:?}, content: {:?} }}",
+                    path, content
+                )
             }
             Self::FileNotInHead { path } => write!(f, "FileNotInHead {{ path: {:?} }}", path),
             Self::StagingExists => write!(f, "StagingExists"),
@@ -89,10 +93,18 @@ impl std::fmt::Debug for Assertion {
             }
             Self::NoteContains(s) => write!(f, "NoteContains({:?})", s),
             Self::EdgeExists { from, to, label } => {
-                write!(f, "EdgeExists {{ from: {:?}, to: {:?}, label: {:?} }}", from, to, label)
+                write!(
+                    f,
+                    "EdgeExists {{ from: {:?}, to: {:?}, label: {:?} }}",
+                    from, to, label
+                )
             }
             Self::QueryReturnsPath { query, path } => {
-                write!(f, "QueryReturnsPath {{ query: {:?}, path: {:?} }}", query, path)
+                write!(
+                    f,
+                    "QueryReturnsPath {{ query: {:?}, path: {:?} }}",
+                    query, path
+                )
             }
             Self::QueryTokensWithinBudget { query, budget } => {
                 write!(

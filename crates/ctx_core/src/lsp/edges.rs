@@ -5,9 +5,7 @@
 
 use crate::lsp::analyzer::{FileAnalysis, ItemKind};
 use crate::lsp::protocol::Range;
-use crate::types::{
-    Confidence, Edge, EdgeLabel, Evidence, EvidenceTool, NodeId, NodeKind, Span,
-};
+use crate::types::{Confidence, Edge, EdgeLabel, Evidence, EvidenceTool, NodeId, NodeKind, Span};
 use crate::ObjectId;
 use tracing::debug;
 
@@ -61,11 +59,7 @@ pub fn build_edges_from_analysis(
                 commit_id,
                 tool: EvidenceTool::RustAnalyzer,
                 confidence: Confidence::High,
-                span: Some(lsp_range_to_span(
-                    &item.range,
-                    file_id,
-                    file_version_id,
-                )),
+                span: Some(lsp_range_to_span(&item.range, file_id, file_version_id)),
                 blob_id: Some(file_version_id),
             },
         });
@@ -488,7 +482,8 @@ mod tests {
                 },
                 trait_name: "std::fmt::Display".to_string(),
                 trait_location: Location {
-                    uri: Url::parse("file:///rustlib/src/rust/library/core/src/fmt/mod.rs").unwrap(),
+                    uri: Url::parse("file:///rustlib/src/rust/library/core/src/fmt/mod.rs")
+                        .unwrap(),
                     range: Range {
                         start: Position {
                             line: 600,

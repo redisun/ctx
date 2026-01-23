@@ -219,11 +219,7 @@ impl Session {
     ///
     /// Creates a new WorkCommit with all pending observations,
     /// updates STAGE pointer, and clears the pending buffer.
-    pub fn flush_step(
-        &mut self,
-        object_store: &ObjectStore,
-        refs: &Refs,
-    ) -> Result<ObjectId> {
+    pub fn flush_step(&mut self, object_store: &ObjectStore, refs: &Refs) -> Result<ObjectId> {
         self.update_last_activity();
 
         // Serialize observations
@@ -381,9 +377,8 @@ impl Session {
     }
 
     fn decode_observations(&self, payload: &[u8]) -> Result<Vec<Observation>> {
-        postcard::from_bytes(payload).map_err(|e| {
-            CtxError::Deserialization(format!("Failed to decode observations: {}", e))
-        })
+        postcard::from_bytes(payload)
+            .map_err(|e| CtxError::Deserialization(format!("Failed to decode observations: {}", e)))
     }
 
     fn infer_step_kind(&self) -> StepKind {

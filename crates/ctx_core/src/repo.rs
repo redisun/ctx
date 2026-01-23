@@ -560,7 +560,10 @@ to store and retrieve context across sessions.
     ///
     /// Convenience method that handles the borrowing internally.
     pub fn flush_active_session(&mut self) -> Result<ObjectId> {
-        let session = self.active_session.as_mut().ok_or(CtxError::NoActiveSession)?;
+        let session = self
+            .active_session
+            .as_mut()
+            .ok_or(CtxError::NoActiveSession)?;
         session.flush_step(&self.object_store, &self.refs)
     }
 
@@ -568,13 +571,19 @@ to store and retrieve context across sessions.
     ///
     /// Convenience method that handles the borrowing internally.
     pub fn observe_file_write(&mut self, path: &str, content: &[u8]) -> Result<ObjectId> {
-        let session = self.active_session.as_mut().ok_or(CtxError::NoActiveSession)?;
+        let session = self
+            .active_session
+            .as_mut()
+            .ok_or(CtxError::NoActiveSession)?;
         session.observe_file_write(path, content, &self.object_store)
     }
 
     /// Observes a file read in the active session.
     pub fn observe_file_read(&mut self, path: &str) -> Result<()> {
-        let session = self.active_session.as_mut().ok_or(CtxError::NoActiveSession)?;
+        let session = self
+            .active_session
+            .as_mut()
+            .ok_or(CtxError::NoActiveSession)?;
         session.observe_file_read(path)
     }
 
@@ -585,13 +594,19 @@ to store and retrieve context across sessions.
     /// - True context for decision analysis
     /// - Reproducible agent behavior
     pub fn observe_file_read_with_content(&mut self, path: &str, content: &[u8]) -> Result<()> {
-        let session = self.active_session.as_mut().ok_or(CtxError::NoActiveSession)?;
+        let session = self
+            .active_session
+            .as_mut()
+            .ok_or(CtxError::NoActiveSession)?;
         session.observe_file_read_with_content(path, content, &self.object_store)
     }
 
     /// Observes a note in the active session.
     pub fn observe_note(&mut self, note: &str) -> Result<()> {
-        let session = self.active_session.as_mut().ok_or(CtxError::NoActiveSession)?;
+        let session = self
+            .active_session
+            .as_mut()
+            .ok_or(CtxError::NoActiveSession)?;
         session.observe_note(note)
     }
 
@@ -602,7 +617,10 @@ to store and retrieve context across sessions.
         exit_code: Option<i32>,
         output: Option<&[u8]>,
     ) -> Result<()> {
-        let session = self.active_session.as_mut().ok_or(CtxError::NoActiveSession)?;
+        let session = self
+            .active_session
+            .as_mut()
+            .ok_or(CtxError::NoActiveSession)?;
         session.observe_command(command, exit_code, output, &self.object_store)
     }
 
@@ -747,12 +765,8 @@ to store and retrieve context across sessions.
                     file_blobs.push((file_path.clone(), file_blob_id));
 
                     let commit_id = self.head_id()?;
-                    let edges = build_edges_from_analysis(
-                        &analysis,
-                        &file_path,
-                        &file_content,
-                        commit_id,
-                    );
+                    let edges =
+                        build_edges_from_analysis(&analysis, &file_path, &file_content, commit_id);
                     all_edges.extend(edges);
                 }
                 Err(e) => {
@@ -804,7 +818,9 @@ to store and retrieve context across sessions.
         self.refs.write_ref("main", commit_id)?;
 
         // Load edge batches before we borrow the index mutably
-        let edge_batches: Vec<_> = commit.edge_batches.iter()
+        let edge_batches: Vec<_> = commit
+            .edge_batches
+            .iter()
             .map(|id| self.object_store.get_typed(*id))
             .collect::<Result<_>>()?;
 
@@ -890,15 +906,19 @@ to store and retrieve context across sessions.
         self.refs.write_ref("main", new_commit_id)?;
 
         // Load edge batches before we borrow the index mutably
-        let edge_batches: Vec<_> = commit.edge_batches.iter()
+        let edge_batches: Vec<_> = commit
+            .edge_batches
+            .iter()
             .map(|id| self.object_store.get_typed(*id))
             .collect::<Result<_>>()?;
 
         // Incrementally add edges from this commit to the index
-        self.index_mut()?.add_commit_edges(new_commit_id, &commit, &edge_batches)?;
+        self.index_mut()?
+            .add_commit_edges(new_commit_id, &commit, &edge_batches)?;
 
         // Index the file path → blob mapping for retrieval (FIX for prompt pack)
-        self.index_mut()?.index_file_path(&file_path, file_blob_id)?;
+        self.index_mut()?
+            .index_file_path(&file_path, file_blob_id)?;
 
         Ok(FileAnalysisReport {
             path: path.to_path_buf(),
@@ -957,9 +977,7 @@ to store and retrieve context across sessions.
     /// - cargo metadata fails
     /// - Edge storage fails
     pub fn analyze_cargo(&mut self) -> Result<crate::cargo::CargoAnalysisReport> {
-        use crate::cargo::{
-            extract_cargo_edges, parse_cargo_metadata, run_cargo_metadata,
-        };
+        use crate::cargo::{extract_cargo_edges, parse_cargo_metadata, run_cargo_metadata};
         use crate::types::EdgeBatch;
 
         // Check availability
@@ -1000,7 +1018,11 @@ to store and retrieve context across sessions.
             message: format!(
                 "Cargo analysis: {} packages, {} targets",
                 snapshot.packages.len(),
-                snapshot.packages.iter().map(|p| p.targets.len()).sum::<usize>()
+                snapshot
+                    .packages
+                    .iter()
+                    .map(|p| p.targets.len())
+                    .sum::<usize>()
             ),
             root_tree: parent_commit.root_tree,
             edge_batches: vec![batch_id],
@@ -1018,12 +1040,15 @@ to store and retrieve context across sessions.
         self.refs.write_ref("main", new_commit_id)?;
 
         // Load edge batches before we borrow the index mutably
-        let edge_batches: Vec<_> = commit.edge_batches.iter()
+        let edge_batches: Vec<_> = commit
+            .edge_batches
+            .iter()
             .map(|id| self.object_store.get_typed(*id))
             .collect::<Result<_>>()?;
 
         // Incrementally add edges from this commit to the index
-        self.index_mut()?.add_commit_edges(new_commit_id, &commit, &edge_batches)?;
+        self.index_mut()?
+            .add_commit_edges(new_commit_id, &commit, &edge_batches)?;
 
         Ok(crate::cargo::CargoAnalysisReport {
             packages_found: snapshot.packages.len(),
@@ -1068,7 +1093,10 @@ to store and retrieve context across sessions.
     /// Verify repository integrity.
     ///
     /// See `crate::verify::verify` for details.
-    pub fn verify(&self, config: crate::verify::VerifyConfig) -> Result<crate::verify::VerifyReport> {
+    pub fn verify(
+        &self,
+        config: crate::verify::VerifyConfig,
+    ) -> Result<crate::verify::VerifyReport> {
         crate::verify::verify(&self.refs, &self.object_store, config)
     }
 }
@@ -1318,11 +1346,17 @@ mod tests {
         // Try to start second session - should fail
         let result = repo.start_session("Second task");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CtxError::SessionAlreadyActive(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            CtxError::SessionAlreadyActive(_)
+        ));
 
         // Verify first session is still active
         assert!(repo.has_active_session());
-        assert_eq!(repo.active_session().unwrap().task_description(), "First task");
+        assert_eq!(
+            repo.active_session().unwrap().task_description(),
+            "First task"
+        );
     }
 
     #[test]
@@ -1351,25 +1385,21 @@ mod tests {
         repo.start_session("Build tree test").unwrap();
 
         // Write multiple files with nested directory structure
-        let file1_id = repo.observe_file_write(
-            "src/main.rs",
-            b"fn main() { println!(\"Hello\"); }",
-        ).unwrap();
+        let file1_id = repo
+            .observe_file_write("src/main.rs", b"fn main() { println!(\"Hello\"); }")
+            .unwrap();
 
-        let file2_id = repo.observe_file_write(
-            "src/lib.rs",
-            b"pub fn hello() {}",
-        ).unwrap();
+        let file2_id = repo
+            .observe_file_write("src/lib.rs", b"pub fn hello() {}")
+            .unwrap();
 
-        let file3_id = repo.observe_file_write(
-            "tests/test.rs",
-            b"#[test] fn test_hello() {}",
-        ).unwrap();
+        let file3_id = repo
+            .observe_file_write("tests/test.rs", b"#[test] fn test_hello() {}")
+            .unwrap();
 
-        let file4_id = repo.observe_file_write(
-            "README.md",
-            b"# My Project",
-        ).unwrap();
+        let file4_id = repo
+            .observe_file_write("README.md", b"# My Project")
+            .unwrap();
 
         // Flush the observations
         repo.flush_active_session().unwrap();
@@ -1379,7 +1409,8 @@ mod tests {
 
         // Verify tree was built correctly
         let commit: crate::types::Commit = repo.object_store().get_typed(commit_id).unwrap();
-        let root_tree: crate::types::Tree = repo.object_store().get_typed(commit.root_tree).unwrap();
+        let root_tree: crate::types::Tree =
+            repo.object_store().get_typed(commit.root_tree).unwrap();
 
         // Root should have: README.md, src/, tests/ (sorted alphabetically)
         assert_eq!(root_tree.entries.len(), 3);
@@ -1394,7 +1425,10 @@ mod tests {
         assert_eq!(root_tree.entries[2].kind, crate::types::TreeEntryKind::Tree);
 
         // Verify src/ subtree
-        let src_tree: crate::types::Tree = repo.object_store().get_typed(root_tree.entries[1].id).unwrap();
+        let src_tree: crate::types::Tree = repo
+            .object_store()
+            .get_typed(root_tree.entries[1].id)
+            .unwrap();
         assert_eq!(src_tree.entries.len(), 2);
 
         // Should be sorted: lib.rs, main.rs
@@ -1407,11 +1441,17 @@ mod tests {
         assert_eq!(src_tree.entries[1].id, file1_id);
 
         // Verify tests/ subtree
-        let tests_tree: crate::types::Tree = repo.object_store().get_typed(root_tree.entries[2].id).unwrap();
+        let tests_tree: crate::types::Tree = repo
+            .object_store()
+            .get_typed(root_tree.entries[2].id)
+            .unwrap();
         assert_eq!(tests_tree.entries.len(), 1);
 
         assert_eq!(tests_tree.entries[0].name, "test.rs");
-        assert_eq!(tests_tree.entries[0].kind, crate::types::TreeEntryKind::Blob);
+        assert_eq!(
+            tests_tree.entries[0].kind,
+            crate::types::TreeEntryKind::Blob
+        );
         assert_eq!(tests_tree.entries[0].id, file3_id);
 
         // Verify content is preserved
@@ -1440,13 +1480,19 @@ mod tests {
         };
 
         let status = repo.check_stale_session(&config);
-        assert!(matches!(status, crate::config::StaleSessionStatus::Fresh { .. }));
+        assert!(matches!(
+            status,
+            crate::config::StaleSessionStatus::Fresh { .. }
+        ));
 
         // Wait for it to become stale (ask threshold)
         thread::sleep(Duration::from_secs(3));
 
         let status = repo.check_stale_session(&config);
-        assert!(matches!(status, crate::config::StaleSessionStatus::ShouldAsk { .. }));
+        assert!(matches!(
+            status,
+            crate::config::StaleSessionStatus::ShouldAsk { .. }
+        ));
     }
 
     #[test]
@@ -1464,7 +1510,10 @@ mod tests {
         let commit: crate::types::Commit = repo.object_store().get_typed(commit_id).unwrap();
         assert!(commit.message.contains("Aborted"));
         assert!(commit.message.contains("User cancelled"));
-        assert_eq!(commit.commit_type, Some(crate::types::CommitType::Abandoned));
+        assert_eq!(
+            commit.commit_type,
+            Some(crate::types::CommitType::Abandoned)
+        );
 
         // Verify session is gone
         assert!(!repo.has_active_session());
@@ -1480,8 +1529,10 @@ mod tests {
         repo.start_session("Test edge extraction").unwrap();
 
         // Observe file writes
-        repo.observe_file_write("src/main.rs", b"fn main() {}").unwrap();
-        repo.observe_file_write("src/lib.rs", b"pub fn test() {}").unwrap();
+        repo.observe_file_write("src/main.rs", b"fn main() {}")
+            .unwrap();
+        repo.observe_file_write("src/lib.rs", b"pub fn test() {}")
+            .unwrap();
 
         // Flush observations
         repo.flush_active_session().unwrap();
@@ -1497,7 +1548,8 @@ mod tests {
 
         // Load the edge batch
         let edge_batch_id = commit.edge_batches[0];
-        let edge_batch: crate::types::EdgeBatch = repo.object_store().get_typed(edge_batch_id).unwrap();
+        let edge_batch: crate::types::EdgeBatch =
+            repo.object_store().get_typed(edge_batch_id).unwrap();
 
         // Should have 2 edges (one per file)
         assert_eq!(edge_batch.edges.len(), 2, "Should have 2 edges");
@@ -1505,19 +1557,31 @@ mod tests {
         // Verify edges point to the files
         assert_eq!(edge_batch.edges[0].from.kind, crate::types::NodeKind::File);
         assert_eq!(edge_batch.edges[0].from.id, "src/lib.rs");
-        assert_eq!(edge_batch.edges[0].label, crate::types::EdgeLabel::UpdatedIn);
+        assert_eq!(
+            edge_batch.edges[0].label,
+            crate::types::EdgeLabel::UpdatedIn
+        );
 
         assert_eq!(edge_batch.edges[1].from.kind, crate::types::NodeKind::File);
         assert_eq!(edge_batch.edges[1].from.id, "src/main.rs");
-        assert_eq!(edge_batch.edges[1].label, crate::types::EdgeLabel::UpdatedIn);
+        assert_eq!(
+            edge_batch.edges[1].label,
+            crate::types::EdgeLabel::UpdatedIn
+        );
 
         // Verify evidence points to base commit (where session started)
         // Note: Evidence records where the observations were made (during session),
         // not the final compacted commit ID
         let base_commit = commit.parents[0];
         assert_eq!(edge_batch.edges[0].evidence.commit_id, base_commit);
-        assert_eq!(edge_batch.edges[0].evidence.tool, crate::types::EvidenceTool::Human);
-        assert_eq!(edge_batch.edges[0].evidence.confidence, crate::types::Confidence::High);
+        assert_eq!(
+            edge_batch.edges[0].evidence.tool,
+            crate::types::EvidenceTool::Human
+        );
+        assert_eq!(
+            edge_batch.edges[0].evidence.confidence,
+            crate::types::Confidence::High
+        );
 
         // Note: To find which commit introduced this EdgeBatch, we would query
         // which commit's edge_batches field contains edge_batch_id.
@@ -1534,7 +1598,8 @@ mod tests {
 
         // Observe file read with content
         let file_content = b"fn main() { println!(\"Hello\"); }";
-        repo.observe_file_read_with_content("src/main.rs", file_content).unwrap();
+        repo.observe_file_read_with_content("src/main.rs", file_content)
+            .unwrap();
 
         // Flush to create WorkCommit
         repo.flush_active_session().unwrap();

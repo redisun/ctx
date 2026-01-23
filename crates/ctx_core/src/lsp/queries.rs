@@ -11,8 +11,7 @@ use crate::error::Result;
 use crate::lsp::client::LspClient;
 use crate::lsp::protocol::{
     CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, DocumentSymbol,
-    Location, Position, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Url,
+    Location, Position, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
 };
 use lsp_types::Hover;
 
@@ -58,7 +57,7 @@ impl<'a> LspQueries<'a> {
     /// * `version` - New file version number (must be greater than previous version)
     pub fn did_change(&mut self, uri: &Url, content: &str, version: i32) -> Result<()> {
         use lsp_types::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
-        
+
         let params = serde_json::json!({
             "textDocument": VersionedTextDocumentIdentifier {
                 uri: uri.clone(),
@@ -103,9 +102,7 @@ impl<'a> LspQueries<'a> {
     /// Returns the location(s) where the symbol is defined.
     pub fn goto_definition(&mut self, uri: &Url, position: Position) -> Result<Vec<Location>> {
         let params = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: uri.clone(),
-            },
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
             position,
         };
 
@@ -166,14 +163,13 @@ impl<'a> LspQueries<'a> {
         position: Position,
     ) -> Result<Vec<CallHierarchyItem>> {
         let params = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: uri.clone(),
-            },
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
             position,
         };
 
-        let response: Option<Vec<CallHierarchyItem>> =
-            self.client.request("textDocument/prepareCallHierarchy", params)?;
+        let response: Option<Vec<CallHierarchyItem>> = self
+            .client
+            .request("textDocument/prepareCallHierarchy", params)?;
 
         Ok(response.unwrap_or_default())
     }
@@ -211,9 +207,7 @@ impl<'a> LspQueries<'a> {
     /// Get hover information (type, documentation, etc.).
     pub fn hover(&mut self, uri: &Url, position: Position) -> Result<Option<Hover>> {
         let params = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: uri.clone(),
-            },
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
             position,
         };
 

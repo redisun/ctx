@@ -89,7 +89,10 @@ fn test_fixture_with_modifications() {
         // Read existing fixture file
         .agent_reads("src/main.rs")
         // Modify a file from the fixture
-        .agent_writes("src/main.rs", b"fn main() {\n    println!(\"Modified!\");\n}")
+        .agent_writes(
+            "src/main.rs",
+            b"fn main() {\n    println!(\"Modified!\");\n}",
+        )
         .agent_writes("src/new_file.rs", b"pub fn new() {}")
         .agent_flushes()
         .agent_completes("Modified and added files")
@@ -129,8 +132,14 @@ fn test_fixture_nested_structure() {
         .agent_reads("src/main.rs")
         .agent_reads("src/lib.rs")
         // Write them to track in CTX
-        .agent_writes("src/main.rs", b"fn main() {\n    println!(\"Hello, world!\");\n}\n")
-        .agent_writes("src/lib.rs", b"pub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}\n")
+        .agent_writes(
+            "src/main.rs",
+            b"fn main() {\n    println!(\"Hello, world!\");\n}\n",
+        )
+        .agent_writes(
+            "src/lib.rs",
+            b"pub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}\n",
+        )
         .agent_flushes()
         .agent_completes("Verified nested structure")
         .user_confirms()
