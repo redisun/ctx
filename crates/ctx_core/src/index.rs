@@ -343,6 +343,177 @@ impl Index {
         Ok(())
     }
 
+    /// Incrementally add edges from a single commit to the index.
+    ///
+    /// This is far more efficient than rebuilding the entire index from scratch.
+    /// Use this after creating a new commit to make its edges immediately queryable.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctx_core::CtxRepo;
+    ///
+    /// # fn main() -> ctx_core::Result<()> {
+    /// let mut repo = CtxRepo::open(".")?;
+    /// // ... create commit ...
+    /// let commit_id = repo.head_id()?;
+    /// let commit = repo.object_store().get_typed(commit_id)?;
+    /// // Load edge batches
+    /// let edge_batches: Vec<_> = commit.edge_batches.iter()
+    ///     .map(|id| repo.object_store().get_typed(*id))
+    ///     .collect::<Result<_>>()?;
+    /// repo.index_mut()?.add_commit_edges(commit_id, &commit, &edge_batches)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn add_commit_edges(&mut self, commit_id: ObjectId, commit: &Commit, edge_batches: &[crate::types::EdgeBatch]) -> Result<()> {
+
+        let write_txn = self.begin_write()?;
+
+        // Cache commit info
+        let commit_info = CommitInfo::from_commit(commit);
+        {
+            let mut table = write_txn.open_table(COMMIT_INFO_TABLE).map_err(|e| {
+                CtxError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to open commit info table: {}", e),
+                ))
+            })?;
+
+            let serialized = postcard::to_allocvec(&commit_info)
+                .map_err(|e| CtxError::Serialization(e.to_string()))?;
+
+            table.insert(commit_id.as_bytes(), serialized.as_slice()).map_err(|e| {
+                CtxError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to insert commit info: {}", e),
+                ))
+            })?;
+        }
+
+        // Process all edge batches from this commit
+        for batch in edge_batches {
+
+            // Index adjacency and names
+            {
+                let mut adjacency_table = write_txn.open_table(ADJACENCY_TABLE).map_err(|e| {
+                    CtxError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to open adjacency table: {}", e),
+                    ))
+                })?;
+
+                let mut name_table = write_txn.open_table(NAME_TO_IDS_TABLE).map_err(|e| {
+                    CtxError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to open name table: {}", e),
+                    ))
+                })?;
+
+                for edge in &batch.edges {
+                    // Add outgoing adjacency
+                    let out_key = encode_adjacency_key(&edge.from, EdgeDirection::Outgoing, edge.label);
+                    let mut out_set: BTreeSet<NodeId> = adjacency_table
+                        .get(out_key.as_slice())
+                        .ok()
+                        .flatten()
+                        .and_then(|v| postcard::from_bytes(v.value()).ok())
+                        .unwrap_or_default();
+                    out_set.insert(edge.to.clone());
+                    let serialized = postcard::to_allocvec(&out_set)
+                        .map_err(|e| CtxError::Serialization(e.to_string()))?;
+                    adjacency_table.insert(out_key.as_slice(), serialized.as_slice()).map_err(|e| {
+                        CtxError::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Failed to insert adjacency: {}", e),
+                        ))
+                    })?;
+
+                    // Add incoming adjacency
+                    let in_key = encode_adjacency_key(&edge.to, EdgeDirection::Incoming, edge.label);
+                    let mut in_set: BTreeSet<NodeId> = adjacency_table
+                        .get(in_key.as_slice())
+                        .ok()
+                        .flatten()
+                        .and_then(|v| postcard::from_bytes(v.value()).ok())
+                        .unwrap_or_default();
+                    in_set.insert(edge.from.clone());
+                    let serialized = postcard::to_allocvec(&in_set)
+                        .map_err(|e| CtxError::Serialization(e.to_string()))?;
+                    adjacency_table.insert(in_key.as_slice(), serialized.as_slice()).map_err(|e| {
+                        CtxError::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Failed to insert adjacency: {}", e),
+                        ))
+                    })?;
+
+                    // Add name index for from node
+                    if let Some(namespace) = node_kind_to_namespace(edge.from.kind) {
+                        let simple_name = extract_simple_name(&edge.from.id);
+                        let object_id = edge.evidence.blob_id.unwrap_or(edge.evidence.commit_id);
+                        let key = encode_name_key(namespace, simple_name);
+
+                        let mut id_set: BTreeSet<ObjectId> = name_table
+                            .get(key.as_slice())
+                            .ok()
+                            .flatten()
+                            .and_then(|v| {
+                                let ids_bytes: Vec<[u8; 32]> = postcard::from_bytes(v.value()).ok()?;
+                                Some(ids_bytes.into_iter().map(ObjectId::from_bytes).collect())
+                            })
+                            .unwrap_or_default();
+                        id_set.insert(object_id);
+                        let ids_bytes: Vec<[u8; 32]> = id_set.iter().map(|id| *id.as_bytes()).collect();
+                        let serialized = postcard::to_allocvec(&ids_bytes)
+                            .map_err(|e| CtxError::Serialization(e.to_string()))?;
+                        name_table.insert(key.as_slice(), serialized.as_slice()).map_err(|e| {
+                            CtxError::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("Failed to insert name index: {}", e),
+                            ))
+                        })?;
+                    }
+
+                    // Add name index for to node
+                    if let Some(namespace) = node_kind_to_namespace(edge.to.kind) {
+                        let simple_name = extract_simple_name(&edge.to.id);
+                        let object_id = edge.evidence.blob_id.unwrap_or(edge.evidence.commit_id);
+                        let key = encode_name_key(namespace, simple_name);
+
+                        let mut id_set: BTreeSet<ObjectId> = name_table
+                            .get(key.as_slice())
+                            .ok()
+                            .flatten()
+                            .and_then(|v| {
+                                let ids_bytes: Vec<[u8; 32]> = postcard::from_bytes(v.value()).ok()?;
+                                Some(ids_bytes.into_iter().map(ObjectId::from_bytes).collect())
+                            })
+                            .unwrap_or_default();
+                        id_set.insert(object_id);
+                        let ids_bytes: Vec<[u8; 32]> = id_set.iter().map(|id| *id.as_bytes()).collect();
+                        let serialized = postcard::to_allocvec(&ids_bytes)
+                            .map_err(|e| CtxError::Serialization(e.to_string()))?;
+                        name_table.insert(key.as_slice(), serialized.as_slice()).map_err(|e| {
+                            CtxError::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("Failed to insert name index: {}", e),
+                            ))
+                        })?;
+                    }
+                }
+            }
+        }
+
+        write_txn.commit().map_err(|e| {
+            CtxError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to commit transaction: {}", e),
+            ))
+        })?;
+
+        Ok(())
+    }
+
     /// Look up a path to get its ObjectId.
     ///
     /// # Examples

@@ -803,12 +803,16 @@ to store and retrieve context across sessions.
         self.refs.write_head(commit_id)?;
         self.refs.write_ref("main", commit_id)?;
 
-        // Rebuild index to make edges immediately queryable
-        self.rebuild_index()?;
+        // Load edge batches before we borrow the index mutably
+        let edge_batches: Vec<_> = commit.edge_batches.iter()
+            .map(|id| self.object_store.get_typed(*id))
+            .collect::<Result<_>>()?;
 
-        // Index all file paths → blob mappings for retrieval (FIX for prompt pack)
-        // Use batch method for efficiency and to ensure atomic write
-        self.index_mut()?.index_file_paths(&file_blobs)?;
+        // Incrementally add edges from this commit to the index and index file paths
+        // This is far more efficient than rebuilding the entire index
+        let index = self.index_mut()?;
+        index.add_commit_edges(commit_id, &commit, &edge_batches)?;
+        index.index_file_paths(&file_blobs)?;
 
         Ok(AnalysisReport {
             files_analyzed,
@@ -885,8 +889,13 @@ to store and retrieve context across sessions.
         self.refs.write_head(new_commit_id)?;
         self.refs.write_ref("main", new_commit_id)?;
 
-        // Rebuild index to make edges immediately queryable
-        self.rebuild_index()?;
+        // Load edge batches before we borrow the index mutably
+        let edge_batches: Vec<_> = commit.edge_batches.iter()
+            .map(|id| self.object_store.get_typed(*id))
+            .collect::<Result<_>>()?;
+
+        // Incrementally add edges from this commit to the index
+        self.index_mut()?.add_commit_edges(new_commit_id, &commit, &edge_batches)?;
 
         // Index the file path → blob mapping for retrieval (FIX for prompt pack)
         self.index_mut()?.index_file_path(&file_path, file_blob_id)?;
@@ -1008,8 +1017,13 @@ to store and retrieve context across sessions.
         self.refs.write_head(new_commit_id)?;
         self.refs.write_ref("main", new_commit_id)?;
 
-        // Rebuild index
-        self.rebuild_index()?;
+        // Load edge batches before we borrow the index mutably
+        let edge_batches: Vec<_> = commit.edge_batches.iter()
+            .map(|id| self.object_store.get_typed(*id))
+            .collect::<Result<_>>()?;
+
+        // Incrementally add edges from this commit to the index
+        self.index_mut()?.add_commit_edges(new_commit_id, &commit, &edge_batches)?;
 
         Ok(crate::cargo::CargoAnalysisReport {
             packages_found: snapshot.packages.len(),
