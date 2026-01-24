@@ -418,8 +418,6 @@ to store and retrieve context across sessions.
         Ok(())
     }
 
-    // === Session Management ===
-
     /// Starts a new session for the given task.
     ///
     /// Creates initial WorkCommit with SessionStart step kind.
@@ -626,8 +624,6 @@ to store and retrieve context across sessions.
         session.observe_command(command, exit_code, output, &self.object_store)
     }
 
-    // === Stale Session Handling ===
-
     /// Checks if current session is stale.
     pub fn check_stale_session(&self, config: &StaleSessionConfig) -> StaleSessionStatus {
         let session = match &self.active_session {
@@ -674,8 +670,6 @@ to store and retrieve context across sessions.
         Ok(report)
     }
 
-    // === Graph and Retrieval ===
-
     /// Load edge batches from the object store.
     ///
     /// Edge batches are stored as separate objects to avoid duplication.
@@ -710,8 +704,6 @@ to store and retrieve context across sessions.
     ) -> Result<crate::pack::PromptPack> {
         crate::pack::build_pack(self, query, config)
     }
-
-    // === Rust Analysis ===
 
     /// Analyze all Rust files in the project using rust-analyzer.
     ///
@@ -960,8 +952,6 @@ to store and retrieve context across sessions.
         Ok(files)
     }
 
-    // === Cargo Analysis ===
-
     /// Analyze Cargo workspace and extract dependency graph.
     ///
     /// Runs `cargo metadata`, parses the output, extracts edges,
@@ -1062,8 +1052,6 @@ to store and retrieve context across sessions.
             commit_id: new_commit_id,
         })
     }
-
-    // === Locking ===
 
     /// Acquires exclusive lock on repository.
     ///
@@ -1367,8 +1355,6 @@ mod tests {
         assert_eq!(repo.ctx_dir(), tmp.path().join(".ctx"));
     }
 
-    // === Session Integration Tests ===
-
     #[test]
     fn test_session_start_and_compact() {
         let tmp = TempDir::new().unwrap();
@@ -1504,7 +1490,10 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, CtxError::RepositoryLocked | CtxError::SessionLockHeld { .. }),
+            matches!(
+                err,
+                CtxError::RepositoryLocked | CtxError::SessionLockHeld { .. }
+            ),
             "Expected RepositoryLocked or SessionLockHeld, got: {:?}",
             err
         );

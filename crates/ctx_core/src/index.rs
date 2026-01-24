@@ -375,17 +375,17 @@ impl Index {
     /// # Examples
     ///
     /// ```no_run
-    /// use ctx_core::CtxRepo;
+    /// use ctx_core::{CtxRepo, Commit, EdgeBatch};
     ///
     /// # fn main() -> ctx_core::Result<()> {
     /// let mut repo = CtxRepo::open(".")?;
     /// // ... create commit ...
     /// let commit_id = repo.head_id()?;
-    /// let commit = repo.object_store().get_typed(commit_id)?;
+    /// let commit: Commit = repo.object_store().get_typed(commit_id)?;
     /// // Load edge batches
-    /// let edge_batches: Vec<_> = commit.edge_batches.iter()
+    /// let edge_batches: Vec<EdgeBatch> = commit.edge_batches.iter()
     ///     .map(|id| repo.object_store().get_typed(*id))
-    ///     .collect::<Result<_>>()?;
+    ///     .collect::<Result<_, _>>()?;
     /// repo.index_mut()?.add_commit_edges(commit_id, &commit, &edge_batches)?;
     /// # Ok(())
     /// # }
@@ -745,8 +745,12 @@ impl Index {
         object_store: &ObjectStore,
         head_id: ObjectId,
     ) -> Result<Self> {
-        let (index, _report) =
-            Self::rebuild_from_objects_with_config(path, object_store, head_id, RebuildConfig::default())?;
+        let (index, _report) = Self::rebuild_from_objects_with_config(
+            path,
+            object_store,
+            head_id,
+            RebuildConfig::default(),
+        )?;
         Ok(index)
     }
 
@@ -768,17 +772,19 @@ impl Index {
                     let mut paths = Vec::new();
                     if let Ok(read_txn) = existing_index.begin_read() {
                         if let Ok(table) = read_txn.open_table(PATH_TO_ID_TABLE) {
-                            for result in table.iter().map_err(|e| {
-                                CtxError::Io(std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    format!("Failed to iterate paths: {}", e),
-                                ))
-                            })? {
-                                if let Ok((key, value)) = result {
-                                    let path_str: &str = key.value();
-                                    let obj_id = ObjectId::from_bytes(*value.value());
-                                    paths.push((path_str.to_string(), obj_id));
-                                }
+                            for (key, value) in table
+                                .iter()
+                                .map_err(|e| {
+                                    CtxError::Io(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("Failed to iterate paths: {}", e),
+                                    ))
+                                })?
+                                .flatten()
+                            {
+                                let path_str: &str = key.value();
+                                let obj_id = ObjectId::from_bytes(*value.value());
+                                paths.push((path_str.to_string(), obj_id));
                             }
                         }
                     }

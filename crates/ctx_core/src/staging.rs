@@ -113,20 +113,6 @@ pub(crate) fn collect_observations(
     collect_observations_from_chain(&chain, object_store)
 }
 
-/// Collects all narrative refs from a staging chain.
-///
-/// This is an internal utility for debugging and future features.
-/// Not part of the public API.
-#[allow(dead_code)]
-pub(crate) fn collect_narrative_refs(
-    staging_head: ObjectId,
-    base_commit: ObjectId,
-    object_store: &ObjectStore,
-) -> Result<Vec<NarrativeRef>> {
-    let chain = walk_staging_chain(staging_head, base_commit, object_store)?;
-    Ok(collect_narrative_refs_from_chain(&chain))
-}
-
 /// Builds a tree from file write observations.
 ///
 /// Takes the latest version of each file path and creates a Tree snapshot.
@@ -265,8 +251,6 @@ fn build_tree_from_paths(
             reason: "Failed to build root tree".to_string(),
         })
 }
-
-// === Internal Helpers ===
 
 fn collect_observations_from_chain(
     chain: &[(ObjectId, WorkCommit)],

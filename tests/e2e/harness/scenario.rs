@@ -2,6 +2,8 @@ use super::assertions::{Assertion, SessionStateMatch};
 use super::runner::ScenarioRunner;
 use super::steps::ScenarioStep;
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Fluent DSL for building test scenarios
@@ -21,8 +23,6 @@ impl Scenario {
         }
     }
 
-    // ===== Initial setup =====
-
     /// Add a single file to initial workspace
     pub fn with_file(mut self, path: &str, content: &[u8]) -> Self {
         self.initial_files
@@ -39,14 +39,40 @@ impl Scenario {
         self
     }
 
-    /// Load initial workspace from fixtures
-    pub fn from_fixture(self, _fixture_name: &str) -> Self {
-        // TODO: Implement fixture loading
-        // For now, just return self
+    /// Load initial workspace from fixtures directory.
+    ///
+    /// Reads all files from `tests/fixtures/{fixture_name}/` and adds them
+    /// to the initial workspace files.
+    pub fn from_fixture(mut self, fixture_name: &str) -> Self {
+        let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join(fixture_name);
+
+        if fixture_path.exists() {
+            self.load_fixture_recursive(&fixture_path, &fixture_path);
+        }
         self
     }
 
-    // ===== User actions =====
+    /// Recursively load files from a fixture directory.
+    fn load_fixture_recursive(&mut self, base: &PathBuf, current: &PathBuf) {
+        if let Ok(entries) = fs::read_dir(current) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    self.load_fixture_recursive(base, &path);
+                } else if path.is_file() {
+                    if let Ok(content) = fs::read(&path) {
+                        // Get relative path from base
+                        if let Ok(relative) = path.strip_prefix(base) {
+                            let key = relative.to_string_lossy().to_string();
+                            self.initial_files.insert(key, content);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /// User sends message to start a new task
     pub fn user_starts_task(mut self, description: &str) -> Self {
@@ -85,8 +111,6 @@ impl Scenario {
         });
         self
     }
-
-    // ===== Agent actions =====
 
     /// Agent reads a file
     pub fn agent_reads(mut self, path: &str) -> Self {
@@ -159,8 +183,6 @@ impl Scenario {
         self
     }
 
-    // ===== Compound agent actions =====
-
     /// Agent performs N generic work steps
     pub fn agent_work_steps(mut self, count: usize) -> Self {
         for i in 0..count {
@@ -168,8 +190,6 @@ impl Scenario {
         }
         self.agent_flushes()
     }
-
-    // ===== Time control =====
 
     /// Wait for a duration
     pub fn wait(mut self, duration: Duration) -> Self {
@@ -189,8 +209,6 @@ impl Scenario {
         self
     }
 
-    // ===== Failure simulation =====
-
     /// Simulate a crash
     pub fn crash(mut self) -> Self {
         self.steps.push(ScenarioStep::Crash);
@@ -202,8 +220,6 @@ impl Scenario {
         self.steps.push(ScenarioStep::Restart);
         self
     }
-
-    // ===== Assertions =====
 
     /// Add a general assertion
     pub fn assert(mut self, assertion: Assertion) -> Self {
@@ -276,8 +292,6 @@ impl Scenario {
         });
         self
     }
-
-    // ===== Execution =====
 
     /// Execute the scenario and return results
     pub fn run(self) -> ScenarioResult {

@@ -87,8 +87,8 @@ impl LspClient {
             .ok_or_else(|| CtxError::RustAnalyzerStartFailed("stdout not captured".into()))?;
 
         // Spawn stderr reader thread to capture rust-analyzer diagnostics
-        let stderr_thread = if let Some(stderr) = child.stderr.take() {
-            Some(thread::spawn(move || {
+        let stderr_thread = child.stderr.take().map(|stderr| {
+            thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines() {
                     match line {
@@ -101,10 +101,8 @@ impl LspClient {
                         }
                     }
                 }
-            }))
-        } else {
-            None
-        };
+            })
+        });
 
         // Spawn reader thread to enable timeouts on blocking reads
         let (message_tx, message_rx) = mpsc::channel();
@@ -144,7 +142,9 @@ impl LspClient {
     }
 
     /// Read a single message from the reader (blocking).
-    fn read_message_blocking(reader: &mut BufReader<std::process::ChildStdout>) -> Result<JsonRpcMessage> {
+    fn read_message_blocking(
+        reader: &mut BufReader<std::process::ChildStdout>,
+    ) -> Result<JsonRpcMessage> {
         // Read headers until we find Content-Length
         let mut content_length: Option<usize> = None;
 
@@ -154,7 +154,9 @@ impl LspClient {
 
             // EOF - process exited
             if bytes_read == 0 {
-                return Err(CtxError::RustAnalyzerCrashed("Process exited unexpectedly".into()));
+                return Err(CtxError::RustAnalyzerCrashed(
+                    "Process exited unexpectedly".into(),
+                ));
             }
 
             let line = line.trim();
@@ -385,9 +387,9 @@ impl LspClient {
                     timeout_ms: timeout.as_millis() as u64,
                 })
             }
-            Err(RecvTimeoutError::Disconnected) => {
-                Err(CtxError::RustAnalyzerCrashed("Reader thread disconnected".into()))
-            }
+            Err(RecvTimeoutError::Disconnected) => Err(CtxError::RustAnalyzerCrashed(
+                "Reader thread disconnected".into(),
+            )),
         }
     }
 }
