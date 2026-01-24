@@ -223,7 +223,7 @@ impl Session {
         self.update_last_activity();
 
         // Serialize observations
-        let payload = self.encode_observations();
+        let payload = self.encode_observations()?;
 
         // Determine step kind based on observations
         let step_kind = self.infer_step_kind();
@@ -372,8 +372,9 @@ impl Session {
         }
     }
 
-    fn encode_observations(&self) -> Vec<u8> {
-        postcard::to_allocvec(&self.pending_observations).unwrap_or_default()
+    fn encode_observations(&self) -> Result<Vec<u8>> {
+        postcard::to_allocvec(&self.pending_observations)
+            .map_err(|e| CtxError::Serialization(format!("Failed to encode observations: {}", e)))
     }
 
     fn decode_observations(&self, payload: &[u8]) -> Result<Vec<Observation>> {

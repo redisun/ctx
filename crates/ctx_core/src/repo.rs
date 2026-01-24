@@ -9,9 +9,11 @@ use crate::staging;
 use crate::types::{Commit, CommitType, Tree};
 use crate::{ObjectId, ObjectStore};
 use fs2::FileExt;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 /// CTX repository handle.
 ///
@@ -1064,14 +1066,94 @@ to store and retrieve context across sessions.
     // === Locking ===
 
     /// Acquires exclusive lock on repository.
+    ///
+    /// The lock file contains the PID of the owning process. If the lock is held
+    /// by a dead process (stale lock), it will be automatically cleaned up.
     fn acquire_lock(&self) -> Result<LockGuard> {
         let lock_path = self.ctx_dir().join("LOCK");
-        let file = File::create(&lock_path)?;
+        self.acquire_lock_with_retry(&lock_path, 0)
+    }
 
-        file.try_lock_exclusive()
-            .map_err(|_| CtxError::RepositoryLocked)?;
+    /// Internal helper for lock acquisition with retry count.
+    fn acquire_lock_with_retry(&self, lock_path: &Path, retry_count: u32) -> Result<LockGuard> {
+        // Limit retries to prevent infinite loops
+        if retry_count > 2 {
+            return Err(CtxError::RepositoryLocked);
+        }
 
-        Ok(LockGuard { _file: file })
+        // Try to create the lock file exclusively (fails if already exists)
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(lock_path)
+        {
+            Ok(mut file) => {
+                // Write our PID to the lock file
+                let pid = std::process::id();
+                writeln!(file, "{}", pid)?;
+                file.flush()?;
+
+                // Acquire file lock for additional safety
+                file.try_lock_exclusive()
+                    .map_err(|_| CtxError::RepositoryLocked)?;
+
+                Ok(LockGuard {
+                    file: Some(file),
+                    path: lock_path.to_path_buf(),
+                })
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Lock file exists - check if the holder is still alive
+                self.handle_existing_lock(lock_path, retry_count)
+            }
+            Err(e) => Err(CtxError::Io(e)),
+        }
+    }
+
+    /// Handle the case where a lock file already exists.
+    fn handle_existing_lock(&self, lock_path: &Path, retry_count: u32) -> Result<LockGuard> {
+        // Try to read the PID from the lock file
+        match fs::read_to_string(lock_path) {
+            Ok(content) => {
+                if let Ok(pid) = content.trim().parse::<u32>() {
+                    if is_process_alive(pid) {
+                        // Process is still alive - lock is legitimately held
+                        return Err(CtxError::SessionLockHeld { pid });
+                    }
+
+                    // Process is dead - stale lock
+                    warn!(
+                        pid = pid,
+                        "Detected stale lock from dead process, cleaning up"
+                    );
+
+                    // Remove the stale lock and retry
+                    if let Err(e) = fs::remove_file(lock_path) {
+                        // If removal fails, it might have been cleaned up by another process
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            return Err(CtxError::Io(e));
+                        }
+                    }
+
+                    // Retry acquiring the lock
+                    return self.acquire_lock_with_retry(lock_path, retry_count + 1);
+                }
+
+                // Lock file exists but has invalid content
+                // This could be a race condition or corruption - try to clean up
+                warn!("Lock file has invalid content, attempting cleanup");
+                let _ = fs::remove_file(lock_path);
+                self.acquire_lock_with_retry(lock_path, retry_count + 1)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Lock file was removed between our check and read - retry
+                self.acquire_lock_with_retry(lock_path, retry_count + 1)
+            }
+            Err(_) => {
+                // Can't read lock file - assume it's locked
+                Err(CtxError::RepositoryLocked)
+            }
+        }
     }
 
     /// Run garbage collection on the repository.
@@ -1102,14 +1184,59 @@ to store and retrieve context across sessions.
 }
 
 /// RAII guard for repository lock.
+///
+/// Holds an exclusive lock on the repository's LOCK file. The lock is
+/// automatically released when dropped, and the lock file is removed.
 struct LockGuard {
-    _file: File,
+    /// The open lock file (holds the file lock).
+    /// Wrapped in Option to allow taking ownership in Drop.
+    file: Option<File>,
+    /// Path to the lock file (for cleanup on drop).
+    path: PathBuf,
 }
 
 impl Drop for LockGuard {
     fn drop(&mut self) {
-        // Lock is automatically released when file handle closes
+        // Take ownership of the file to close it (releases the lock)
+        if let Some(file) = self.file.take() {
+            drop(file);
+        }
+
+        // Remove the lock file - ignore errors (file might already be gone)
+        let _ = fs::remove_file(&self.path);
     }
+}
+
+/// Check if a process with the given PID is still alive.
+///
+/// On Linux, uses /proc/{pid}/stat to check process existence.
+/// On other Unix systems, uses /proc/{pid} directory existence.
+/// On non-Unix systems, conservatively assumes the process is alive.
+#[cfg(target_os = "linux")]
+fn is_process_alive(pid: u32) -> bool {
+    // On Linux, check if /proc/{pid}/stat exists
+    // This is more reliable than just /proc/{pid} because zombie processes
+    // still have a /proc entry but their stat file shows they're defunct
+    std::path::Path::new(&format!("/proc/{}/stat", pid)).exists()
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn is_process_alive(pid: u32) -> bool {
+    // On other Unix systems (macOS, BSD), /proc may not exist
+    // Use a command-based approach
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(true) // Conservative: assume alive if we can't check
+}
+
+#[cfg(not(unix))]
+fn is_process_alive(_pid: u32) -> bool {
+    // On non-Unix systems (Windows), conservatively assume process is alive
+    // This means stale locks won't be auto-cleaned on Windows
+    // Users can manually delete the LOCK file if needed
+    true
 }
 
 /// Report from analyzing all Rust files in a project.
@@ -1371,9 +1498,16 @@ mod tests {
         let mut repo2 = CtxRepo::open(tmp.path()).unwrap();
 
         // This should fail due to lock
+        // With PID-based locking, we get SessionLockHeld when we can detect
+        // the holding process, or RepositoryLocked if we can't
         let result = repo2.start_session("Task in repo2");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CtxError::RepositoryLocked));
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, CtxError::RepositoryLocked | CtxError::SessionLockHeld { .. }),
+            "Expected RepositoryLocked or SessionLockHeld, got: {:?}",
+            err
+        );
     }
 
     #[test]

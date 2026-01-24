@@ -9,19 +9,34 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use tracing::debug;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+use tracing::{debug, warn};
+
+/// Default read timeout for LSP messages (30 seconds).
+pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Low-level LSP client using JSON-RPC over stdin/stdout.
+///
+/// Uses a background reader thread to enable timeouts on blocking reads.
 pub struct LspClient {
     child: Child,
     stdin: BufWriter<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
+    /// Channel to receive messages from the reader thread.
+    message_rx: Receiver<Result<JsonRpcMessage>>,
+    /// Handle to the reader thread (for cleanup).
+    _reader_thread: JoinHandle<()>,
+    /// Handle to the stderr thread (for cleanup).
+    _stderr_thread: Option<JoinHandle<()>>,
     next_id: u64,
+    /// Read timeout for messages.
+    read_timeout: Duration,
 }
 
 impl LspClient {
-    /// Spawn rust-analyzer for a project.
+    /// Spawn rust-analyzer for a project with default timeout.
     ///
     /// # Arguments
     ///
@@ -31,10 +46,24 @@ impl LspClient {
     ///
     /// Returns error if rust-analyzer cannot be found or fails to start.
     pub fn spawn(project_root: &Path) -> Result<Self> {
+        Self::spawn_with_timeout(project_root, DEFAULT_READ_TIMEOUT)
+    }
+
+    /// Spawn rust-analyzer for a project with custom timeout.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_root` - Root directory of the Rust project
+    /// * `read_timeout` - Timeout for reading LSP messages
+    ///
+    /// # Errors
+    ///
+    /// Returns error if rust-analyzer cannot be found or fails to start.
+    pub fn spawn_with_timeout(project_root: &Path, read_timeout: Duration) -> Result<Self> {
         let mut child = Command::new("rust-analyzer")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null()) // Suppress rust-analyzer's stderr logs
+            .stderr(Stdio::piped()) // Capture stderr for debugging
             .current_dir(project_root)
             .spawn()
             .map_err(|e| {
@@ -52,19 +81,107 @@ impl LspClient {
                 .ok_or_else(|| CtxError::RustAnalyzerStartFailed("stdin not captured".into()))?,
         );
 
-        let stdout = BufReader::new(
-            child
-                .stdout
-                .take()
-                .ok_or_else(|| CtxError::RustAnalyzerStartFailed("stdout not captured".into()))?,
-        );
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| CtxError::RustAnalyzerStartFailed("stdout not captured".into()))?;
+
+        // Spawn stderr reader thread to capture rust-analyzer diagnostics
+        let stderr_thread = if let Some(stderr) = child.stderr.take() {
+            Some(thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(line) => {
+                            debug!(target: "rust_analyzer_stderr", "{}", line);
+                        }
+                        Err(e) => {
+                            debug!(target: "rust_analyzer_stderr", "Error reading stderr: {}", e);
+                            break;
+                        }
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Spawn reader thread to enable timeouts on blocking reads
+        let (message_tx, message_rx) = mpsc::channel();
+        let reader_thread = Self::spawn_reader_thread(stdout, message_tx);
 
         Ok(Self {
             child,
             stdin,
-            stdout,
+            message_rx,
+            _reader_thread: reader_thread,
+            _stderr_thread: stderr_thread,
             next_id: 1,
+            read_timeout,
         })
+    }
+
+    /// Spawns a background thread that reads LSP messages and sends them via channel.
+    fn spawn_reader_thread(
+        stdout: std::process::ChildStdout,
+        tx: Sender<Result<JsonRpcMessage>>,
+    ) -> JoinHandle<()> {
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                let result = Self::read_message_blocking(&mut reader);
+                let is_err = result.is_err();
+                // Send result, ignore error if receiver disconnected
+                if tx.send(result).is_err() {
+                    break;
+                }
+                // Stop on error (e.g., EOF when process exits)
+                if is_err {
+                    break;
+                }
+            }
+        })
+    }
+
+    /// Read a single message from the reader (blocking).
+    fn read_message_blocking(reader: &mut BufReader<std::process::ChildStdout>) -> Result<JsonRpcMessage> {
+        // Read headers until we find Content-Length
+        let mut content_length: Option<usize> = None;
+
+        loop {
+            let mut line = String::new();
+            let bytes_read = reader.read_line(&mut line)?;
+
+            // EOF - process exited
+            if bytes_read == 0 {
+                return Err(CtxError::RustAnalyzerCrashed("Process exited unexpectedly".into()));
+            }
+
+            let line = line.trim();
+
+            // Empty line marks end of headers
+            if line.is_empty() {
+                break;
+            }
+
+            // Parse Content-Length header
+            if let Some(len_str) = line.strip_prefix("Content-Length: ") {
+                content_length =
+                    Some(len_str.parse().map_err(|_| {
+                        CtxError::LspProtocolError("invalid Content-Length".into())
+                    })?);
+            }
+        }
+
+        let content_length = content_length
+            .ok_or_else(|| CtxError::LspProtocolError("missing Content-Length header".into()))?;
+
+        // Read content
+        let mut content = vec![0u8; content_length];
+        reader.read_exact(&mut content)?;
+
+        // Parse JSON
+        serde_json::from_slice(&content).map_err(|e| CtxError::Deserialization(e.to_string()))
     }
 
     /// Initialize the LSP connection.
@@ -250,40 +367,28 @@ impl LspClient {
         Ok(())
     }
 
-    /// Read a JSON-RPC message.
+    /// Read a JSON-RPC message with timeout.
+    ///
+    /// Returns an error if no message is received within the configured timeout.
     fn read_message(&mut self) -> Result<JsonRpcMessage> {
-        // Read headers until we find Content-Length
-        let mut content_length: Option<usize> = None;
+        self.read_message_with_timeout(self.read_timeout)
+    }
 
-        loop {
-            let mut line = String::new();
-            self.stdout.read_line(&mut line)?;
-
-            let line = line.trim();
-
-            // Empty line marks end of headers
-            if line.is_empty() {
-                break;
+    /// Read a JSON-RPC message with a specific timeout.
+    fn read_message_with_timeout(&mut self, timeout: Duration) -> Result<JsonRpcMessage> {
+        match self.message_rx.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(RecvTimeoutError::Timeout) => {
+                warn!("LSP read timeout after {:?}", timeout);
+                Err(CtxError::LspTimeout {
+                    method: "read_message".into(),
+                    timeout_ms: timeout.as_millis() as u64,
+                })
             }
-
-            // Parse Content-Length header
-            if let Some(len_str) = line.strip_prefix("Content-Length: ") {
-                content_length =
-                    Some(len_str.parse().map_err(|_| {
-                        CtxError::LspProtocolError("invalid Content-Length".into())
-                    })?);
+            Err(RecvTimeoutError::Disconnected) => {
+                Err(CtxError::RustAnalyzerCrashed("Reader thread disconnected".into()))
             }
         }
-
-        let content_length = content_length
-            .ok_or_else(|| CtxError::LspProtocolError("missing Content-Length header".into()))?;
-
-        // Read content
-        let mut content = vec![0u8; content_length];
-        self.stdout.read_exact(&mut content)?;
-
-        // Parse JSON
-        serde_json::from_slice(&content).map_err(|e| CtxError::Deserialization(e.to_string()))
     }
 }
 

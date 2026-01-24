@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// High-level rust-analyzer manager.
 pub struct RustAnalyzer {
@@ -127,6 +127,9 @@ impl RustAnalyzer {
         let uri = Self::path_to_uri(&abs_path);
         let content = std::fs::read_to_string(&abs_path)?;
 
+        // Track warnings about incomplete analysis
+        let mut warnings = Vec::new();
+
         // Compute content hash to detect changes
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -167,7 +170,8 @@ impl RustAnalyzer {
                         self.indexing_complete = true;
                     }
                     Err(e) => {
-                        debug!("Timeout waiting for diagnostics: {}", e);
+                        warn!("Timeout waiting for rust-analyzer diagnostics: {}", e);
+                        warnings.push(AnalysisWarning::DiagnosticsTimeout);
                         // Continue anyway - some files might not produce diagnostics
                         // But we'll still try call hierarchy, it might work
                     }
@@ -268,7 +272,8 @@ impl RustAnalyzer {
                 }
             }
         } else {
-            debug!("Skipping call hierarchy extraction - rust-analyzer indexing not complete");
+            warn!("Skipping call hierarchy extraction - rust-analyzer indexing not complete");
+            warnings.push(AnalysisWarning::CallHierarchySkipped);
         }
 
         // Extract reference information for each item
@@ -355,7 +360,8 @@ impl RustAnalyzer {
                 }
             }
         } else {
-            debug!("Skipping references extraction - rust-analyzer indexing not complete");
+            warn!("Skipping references extraction - rust-analyzer indexing not complete");
+            warnings.push(AnalysisWarning::ReferencesSkipped);
         }
 
         // Extract trait implementation information for structs/enums
@@ -369,6 +375,7 @@ impl RustAnalyzer {
             calls,
             references,
             implements,
+            warnings,
         })
     }
 
@@ -467,6 +474,39 @@ impl RustAnalyzer {
     }
 }
 
+/// Warning generated during analysis.
+///
+/// Warnings indicate that some analysis was skipped or incomplete,
+/// but the analysis could still produce useful partial results.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnalysisWarning {
+    /// Timed out waiting for rust-analyzer to complete initial indexing.
+    DiagnosticsTimeout,
+    /// Call hierarchy extraction was skipped because indexing wasn't complete.
+    CallHierarchySkipped,
+    /// Reference extraction was skipped because indexing wasn't complete.
+    ReferencesSkipped,
+}
+
+impl std::fmt::Display for AnalysisWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DiagnosticsTimeout => write!(
+                f,
+                "Timed out waiting for rust-analyzer indexing - analysis may be incomplete"
+            ),
+            Self::CallHierarchySkipped => write!(
+                f,
+                "Call hierarchy extraction skipped - rust-analyzer indexing incomplete"
+            ),
+            Self::ReferencesSkipped => write!(
+                f,
+                "Reference extraction skipped - rust-analyzer indexing incomplete"
+            ),
+        }
+    }
+}
+
 /// Analysis result for a single file.
 #[derive(Debug, Clone)]
 pub struct FileAnalysis {
@@ -478,6 +518,10 @@ pub struct FileAnalysis {
     pub references: Vec<ReferenceInfo>,
     /// Trait implementation relationships (type implements trait).
     pub implements: Vec<ImplementsInfo>,
+    /// Warnings generated during analysis.
+    ///
+    /// If non-empty, the analysis results may be incomplete.
+    pub warnings: Vec<AnalysisWarning>,
 }
 
 /// An analyzed code item (function, struct, etc.).

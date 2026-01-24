@@ -12,9 +12,31 @@ use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Index schema version for migration support.
 pub const INDEX_SCHEMA_VERSION: u32 = 1;
+
+/// Configuration for index rebuild operation.
+#[derive(Debug, Clone, Default)]
+pub struct RebuildConfig {
+    /// If true, skip corrupted objects instead of failing.
+    /// Corrupted objects will be logged as warnings.
+    pub skip_corrupted: bool,
+}
+
+/// Report from an index rebuild operation.
+#[derive(Debug, Clone, Default)]
+pub struct RebuildReport {
+    /// Number of commits processed.
+    pub commits_processed: usize,
+    /// Number of edge batches processed.
+    pub edge_batches_processed: usize,
+    /// Number of paths indexed.
+    pub paths_indexed: usize,
+    /// Object IDs that were skipped due to corruption.
+    pub corrupted_objects: Vec<ObjectId>,
+}
 
 // Table definitions
 const METADATA_TABLE: TableDefinition<&str, u32> = TableDefinition::new("metadata");
@@ -723,6 +745,22 @@ impl Index {
         object_store: &ObjectStore,
         head_id: ObjectId,
     ) -> Result<Self> {
+        let (index, _report) =
+            Self::rebuild_from_objects_with_config(path, object_store, head_id, RebuildConfig::default())?;
+        Ok(index)
+    }
+
+    /// Rebuilds the index from the object store with configuration.
+    ///
+    /// Like `rebuild_from_objects` but allows configuring behavior for corrupted objects
+    /// and returns a detailed report.
+    pub fn rebuild_from_objects_with_config(
+        path: impl AsRef<Path>,
+        object_store: &ObjectStore,
+        head_id: ObjectId,
+        config: RebuildConfig,
+    ) -> Result<(Self, RebuildReport)> {
+        let mut report = RebuildReport::default();
         // First, preserve any existing file path mappings before rebuilding
         let preserved_paths: Vec<(String, ObjectId)> = if path.as_ref().exists() {
             match Self::open(&path)? {
@@ -771,24 +809,70 @@ impl Index {
                 continue;
             }
 
-            let commit: Commit = object_store.get_typed(commit_id)?;
+            // Try to load the commit
+            let commit: Commit = match object_store.get_typed(commit_id) {
+                Ok(c) => c,
+                Err(e) => {
+                    if config.skip_corrupted {
+                        warn!(
+                            commit_id = %commit_id,
+                            error = %e,
+                            "Skipping corrupted commit during index rebuild"
+                        );
+                        report.corrupted_objects.push(commit_id);
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+
+            report.commits_processed += 1;
 
             // Cache commit info
             commit_cache.insert(commit_id, CommitInfo::from_commit(&commit));
 
             // Index tree paths (only for HEAD to avoid stale paths)
             if commit_id == head_id {
-                index_tree_paths(
+                if let Err(e) = index_tree_paths(
                     object_store,
                     commit.root_tree,
                     String::new(),
                     &mut path_index,
-                )?;
+                ) {
+                    if config.skip_corrupted {
+                        warn!(
+                            tree_id = %commit.root_tree,
+                            error = %e,
+                            "Error indexing tree paths during rebuild"
+                        );
+                        report.corrupted_objects.push(commit.root_tree);
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
 
             // Index edges from all edge batches
             for batch_id in &commit.edge_batches {
-                let batch: EdgeBatch = object_store.get_typed(*batch_id)?;
+                let batch: EdgeBatch = match object_store.get_typed(*batch_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        if config.skip_corrupted {
+                            warn!(
+                                batch_id = %batch_id,
+                                error = %e,
+                                "Skipping corrupted edge batch during index rebuild"
+                            );
+                            report.corrupted_objects.push(*batch_id);
+                            continue;
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
+
+                report.edge_batches_processed += 1;
 
                 for edge in &batch.edges {
                     // Build adjacency: outgoing
@@ -824,10 +908,13 @@ impl Index {
             path_index.insert(path, obj_id);
         }
 
+        // Record paths indexed
+        report.paths_indexed = path_index.len();
+
         // Write all collected data in a single transaction
         index.write_batch(&path_index, &name_index, &commit_cache, &adjacency)?;
 
-        Ok(index)
+        Ok((index, report))
     }
 
     /// Write all index data in a single transaction.

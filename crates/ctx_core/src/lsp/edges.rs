@@ -264,6 +264,7 @@ mod tests {
             calls: vec![],
             references: vec![],
             implements: vec![],
+            warnings: vec![],
         };
 
         let edges = build_edges_from_analysis(&analysis, file_path, file_content, commit_id);
@@ -321,6 +322,7 @@ mod tests {
             }],
             references: vec![],
             implements: vec![],
+            warnings: vec![],
         };
 
         let edges = build_edges_from_analysis(&analysis, file_path, file_content, commit_id);
@@ -428,6 +430,7 @@ mod tests {
                 ],
             }],
             implements: vec![],
+            warnings: vec![],
         };
 
         let edges = build_edges_from_analysis(&analysis, file_path, file_content, commit_id);
@@ -496,6 +499,7 @@ mod tests {
                     },
                 },
             }],
+            warnings: vec![],
         };
 
         let edges = build_edges_from_analysis(&analysis, file_path, file_content, commit_id);
