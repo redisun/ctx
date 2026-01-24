@@ -68,6 +68,7 @@
 //! ```
 
 mod cargo;
+mod classification;
 mod config;
 mod error;
 mod gc;
@@ -81,6 +82,7 @@ mod pack;
 mod refs;
 mod repo;
 mod session;
+mod session_handler;
 mod staging;
 mod types;
 mod verify;
@@ -109,8 +111,10 @@ pub use pack::{
     RetrievalConfig, RetrievedChunk, TokenBudget,
 };
 pub use refs::Refs;
-pub use repo::{AnalysisReport, CtxRepo, FileAnalysisReport};
+pub use classification::{classify_message, ClassificationContext, MessageClassification};
+pub use repo::{AnalysisReport, CtxRepo, FileAnalysisReport, RecoverySummary};
 pub use session::Session;
+pub use session_handler::{PendingAction, SessionHandler, SessionResponse, UserChoice};
 pub use types::*;
 pub use verify::{recover_staging, verify, VerifyConfig, VerifyReport};
 

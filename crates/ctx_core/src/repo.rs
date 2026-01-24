@@ -6,7 +6,7 @@ use crate::index::Index;
 use crate::refs::Refs;
 use crate::session::Session;
 use crate::staging;
-use crate::types::{Commit, CommitType, Tree};
+use crate::types::{Commit, CommitType, SessionState, Tree};
 use crate::{ObjectId, ObjectStore};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
@@ -14,6 +14,98 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::warn;
+
+/// Summary of a recovered session for presentation to the user.
+#[derive(Debug, Clone)]
+pub struct RecoverySummary {
+    /// The task description for the session.
+    pub task: String,
+    /// Current session state.
+    pub state: SessionState,
+    /// How long the session has been idle.
+    pub idle_duration: Duration,
+    /// Progress summary showing what was done.
+    pub progress_summary: String,
+    /// Suggested prompt for presenting to the user.
+    pub suggested_prompt: String,
+}
+
+/// Generates a suggested prompt for presenting a recovered session to the user.
+fn generate_suggested_prompt(state: &SessionState, task: &str, idle_duration: Duration) -> String {
+    let idle_str = format_idle_duration(idle_duration);
+
+    match state {
+        SessionState::Running => {
+            format!(
+                "You have an in-progress task from {}: \"{}\". Would you like to continue?",
+                idle_str, task
+            )
+        }
+        SessionState::AwaitingUser { question, .. } => {
+            format!(
+                "You have an unfinished task from {}: \"{}\". \
+                 I was waiting for your answer to: {}",
+                idle_str, task, question
+            )
+        }
+        SessionState::Interrupted { user_message } => {
+            format!(
+                "You have an interrupted task from {}: \"{}\". \
+                 You had said: \"{}\". Would you like to continue?",
+                idle_str, task, user_message
+            )
+        }
+        SessionState::PendingComplete { summary } => {
+            format!(
+                "You have a completed task from {} awaiting your confirmation: \"{}\". \
+                 Summary: {}. Is this acceptable?",
+                idle_str, task, summary
+            )
+        }
+        SessionState::Complete => {
+            format!(
+                "Previous task \"{}\" was completed {}. Ready for a new task.",
+                task, idle_str
+            )
+        }
+        SessionState::Aborted { reason } => {
+            format!(
+                "Previous task \"{}\" was aborted {}: {}. Ready for a new task.",
+                task, idle_str, reason
+            )
+        }
+    }
+}
+
+/// Formats idle duration in human-readable form.
+fn format_idle_duration(duration: Duration) -> String {
+    let secs = duration.as_secs();
+
+    if secs < 60 {
+        "moments ago".to_string()
+    } else if secs < 3600 {
+        let mins = secs / 60;
+        if mins == 1 {
+            "1 minute ago".to_string()
+        } else {
+            format!("{} minutes ago", mins)
+        }
+    } else if secs < 86400 {
+        let hours = secs / 3600;
+        if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{} hours ago", hours)
+        }
+    } else {
+        let days = secs / 86400;
+        if days == 1 {
+            "1 day ago".to_string()
+        } else {
+            format!("{} days ago", days)
+        }
+    }
+}
 
 /// CTX repository handle.
 ///
@@ -558,6 +650,16 @@ to store and retrieve context across sessions.
         self.active_session.as_mut()
     }
 
+    /// Alias for `active_session()` - returns reference to active session.
+    pub fn session(&self) -> Option<&Session> {
+        self.active_session.as_ref()
+    }
+
+    /// Flushes active session (alias for `flush_active_session()`).
+    pub fn flush_session(&mut self) -> Result<ObjectId> {
+        self.flush_active_session()
+    }
+
     /// Flushes the active session's current step.
     ///
     /// Convenience method that handles the borrowing internally.
@@ -672,6 +774,65 @@ to store and retrieve context across sessions.
         }
 
         Ok(report)
+    }
+
+    /// Compacts current session because user started a new task.
+    ///
+    /// This preserves the current work with a commit type that indicates
+    /// it was interrupted by a new task, not abandoned or completed.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_task_summary` - Brief description of the new task that's replacing this one
+    pub fn compact_for_new_task(&mut self, new_task_summary: &str) -> Result<ObjectId> {
+        let current_task = self
+            .active_session
+            .as_ref()
+            .map(|s| s.task_description().to_string())
+            .unwrap_or_else(|| "unknown task".to_string());
+
+        let message = format!("Saved: {} (interrupted by new task)", current_task);
+        self.compact_session_with_type(
+            &message,
+            CommitType::InterruptedByNewTask {
+                new_task_summary: new_task_summary.to_string(),
+            },
+        )
+    }
+
+    /// Recovers a session with a summary for presentation to the user.
+    ///
+    /// This is useful for agents that need to present the recovered session
+    /// state to the user with context about what was happening.
+    ///
+    /// Returns None if no STAGE pointer exists.
+    pub fn recover_session_with_summary(&mut self) -> Result<Option<RecoverySummary>> {
+        if let Some(staging_head) = self.refs.read_stage()? {
+            let session = Session::from_staging(
+                staging_head,
+                &self.object_store,
+                self.time_provider.clone(),
+            )?;
+
+            let task = session.task_description().to_string();
+            let state = session.state().clone();
+            let idle_duration = session.idle_time();
+            let progress_summary = session.generate_progress_summary(&self.object_store)?;
+
+            let suggested_prompt = generate_suggested_prompt(&state, &task, idle_duration);
+
+            self.active_session = Some(session);
+
+            Ok(Some(RecoverySummary {
+                task,
+                state,
+                idle_duration,
+                progress_summary,
+                suggested_prompt,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     // === Graph and Retrieval ===
