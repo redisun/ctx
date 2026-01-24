@@ -89,8 +89,6 @@ impl ScenarioRunner {
         }
     }
 
-    // ===== User action handlers =====
-
     fn handle_user_start_task(&mut self, description: &str) -> Result<()> {
         let ctx = self
             .ctx
@@ -178,8 +176,6 @@ impl ScenarioRunner {
 
         Ok(())
     }
-
-    // ===== Agent action handlers =====
 
     fn handle_agent_read(&mut self, path: &str) -> Result<()> {
         // Read actual file content from workspace
@@ -311,14 +307,10 @@ impl ScenarioRunner {
         Ok(())
     }
 
-    // ===== Time control =====
-
     fn handle_wait(&mut self, duration: Duration) -> Result<()> {
         self.clock.advance(duration);
         Ok(())
     }
-
-    // ===== Failure simulation =====
 
     fn handle_crash(&mut self) -> Result<()> {
         // Drop CTX without cleanup
@@ -348,8 +340,6 @@ impl ScenarioRunner {
 
         Ok(())
     }
-
-    // ===== Assertions =====
 
     fn handle_assertion(&mut self, assertion: &Assertion) -> Result<()> {
         match assertion {
@@ -690,8 +680,6 @@ impl ScenarioRunner {
         }
         Ok(())
     }
-
-    // ===== Helper methods =====
 
     fn count_commits(&self, ctx: &CtxRepo) -> Result<usize> {
         use std::collections::HashSet;

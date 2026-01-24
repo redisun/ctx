@@ -43,8 +43,6 @@ pub struct Session {
 }
 
 impl Session {
-    // === Creation ===
-
     /// Creates a new session.
     ///
     /// The `time_provider` parameter allows injecting controlled time for testing.
@@ -128,8 +126,6 @@ impl Session {
         })
     }
 
-    // === Observation API ===
-
     /// Records that the agent read a file (path only, no content).
     pub fn observe_file_read(&mut self, path: &str) -> Result<()> {
         self.update_last_activity();
@@ -212,8 +208,6 @@ impl Session {
         });
         Ok(())
     }
-
-    // === State Management ===
 
     /// Flushes pending observations to a WorkCommit.
     ///
@@ -354,8 +348,6 @@ impl Session {
         Ok(summary)
     }
 
-    // === Internal Helpers ===
-
     fn update_last_activity(&mut self) {
         self.last_activity = if let Some(ref provider) = self.time_provider {
             provider()
@@ -431,8 +423,6 @@ impl Session {
         }
     }
 }
-
-// === Helper Functions ===
 
 /// Returns the current Unix timestamp in seconds.
 fn current_timestamp() -> i64 {

@@ -446,20 +446,16 @@ impl CodingAgent {
     
     /// Main entry point - user gives a task
     pub async fn run_task(&mut self, task: &str) -> Result<String> {
-        // === LIFECYCLE: on_task_received ===
         self.session = Some(self.ctx.start_session(task)?);
         
-        // === LIFECYCLE: before_llm_call (planning) ===
         let pack = self.ctx.build_pack(task, &RetrievalConfig::default())?;
         let plan = self.plan_task(&pack, task).await?;
         
-        // === LIFECYCLE: on_planning_complete ===
         self.session.as_mut().unwrap().observe_plan(&plan)?;
         
         // Execute the plan
         let result = self.execute_plan(&plan).await;
         
-        // === LIFECYCLE: on_task_complete or on_task_abort ===
         match &result {
             Ok(summary) => {
                 self.ctx.compact_session(summary)?;
@@ -490,7 +486,6 @@ impl CodingAgent {
         for step in &plan.steps {
             self.execute_step(step).await?;
             
-            // === LIFECYCLE: on_step_complete ===
             self.session.as_mut().unwrap().flush_step()?;
         }
         
@@ -498,7 +493,6 @@ impl CodingAgent {
     }
     
     async fn execute_step(&mut self, step: &str) -> Result<()> {
-        // === LIFECYCLE: before_llm_call ===
         let pack = self.ctx.build_pack(step, &RetrievalConfig::default())?;
         
         let prompt = format!(
@@ -513,7 +507,6 @@ impl CodingAgent {
         for action in parse_actions(&response) {
             match action {
                 Action::ReadFile(path) => {
-                    // === LIFECYCLE: on_file_read ===
                     self.session.as_mut().unwrap()
                         .observe_file_read(&path)?;
                 }
@@ -521,7 +514,6 @@ impl CodingAgent {
                     // Actually write the file
                     fs::write(&path, &content)?;
                     
-                    // === LIFECYCLE: on_file_write ===
                     self.session.as_mut().unwrap()
                         .observe_file_write(&path, content.as_bytes())?;
                 }
@@ -529,7 +521,6 @@ impl CodingAgent {
                     // Actually run the command
                     let output = run_command(&cmd)?;
                     
-                    // === LIFECYCLE: on_command_run ===
                     self.session.as_mut().unwrap()
                         .observe_command(&cmd, &output)?;
                 }
