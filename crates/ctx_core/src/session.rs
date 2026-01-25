@@ -1,7 +1,8 @@
 //! Session lifecycle management for staging work.
 
 use crate::error::{CtxError, Result};
-use crate::types::{Observation, SessionState, StepKind, WorkCommit};
+use crate::types::{Observation, SessionState, SessionStats, StepKind, WorkCommit};
+use std::collections::HashSet;
 use crate::{ObjectId, ObjectStore, Refs};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -308,6 +309,77 @@ impl Session {
     /// Returns step count.
     pub fn step_count(&self) -> u32 {
         self.step_count
+    }
+
+    /// Computes statistics about the session's observations.
+    ///
+    /// This walks the staging chain to count all flushed observations,
+    /// plus any pending observations not yet flushed.
+    pub fn stats(&self, object_store: &ObjectStore) -> SessionStats {
+        let mut stats = SessionStats {
+            steps_flushed: self.step_count,
+            pending_observations: self.pending_observations.len(),
+            ..Default::default()
+        };
+
+        let mut files_read = HashSet::new();
+        let mut files_written = HashSet::new();
+
+        // Count pending observations
+        for obs in &self.pending_observations {
+            Self::count_observation(&mut stats, obs, &mut files_read, &mut files_written);
+        }
+
+        // Walk staging chain and count flushed observations
+        let mut current = self.staging_head;
+        while current != self.base_commit {
+            if let Ok(work) = object_store.get_typed::<WorkCommit>(current) {
+                if let Ok(observations) = self.decode_observations(&work.payload) {
+                    for obs in &observations {
+                        Self::count_observation(&mut stats, obs, &mut files_read, &mut files_written);
+                    }
+                }
+                if let Some(&parent) = work.parents.first() {
+                    current = parent;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        stats.unique_files_read = files_read.len();
+        stats.unique_files_written = files_written.len();
+        stats
+    }
+
+    /// Helper to count a single observation.
+    fn count_observation(
+        stats: &mut SessionStats,
+        obs: &Observation,
+        files_read: &mut HashSet<String>,
+        files_written: &mut HashSet<String>,
+    ) {
+        match obs {
+            Observation::FileRead { path, .. } => {
+                stats.file_reads += 1;
+                files_read.insert(path.clone());
+            }
+            Observation::FileWrite { path, .. } => {
+                stats.file_writes += 1;
+                files_written.insert(path.clone());
+            }
+            Observation::Command { .. } => {
+                stats.commands += 1;
+            }
+            Observation::Note { .. } => {
+                stats.notes += 1;
+            }
+            Observation::Plan { .. } => {
+                stats.plans += 1;
+            }
+        }
     }
 
     /// Generates a progress summary from the staging chain.

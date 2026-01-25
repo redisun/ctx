@@ -103,6 +103,47 @@ pub enum Observation {
     },
 }
 
+/// Statistics about a session's observations.
+///
+/// Tracks counts of different observation types and related metrics.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionStats {
+    /// Number of file read observations.
+    pub file_reads: usize,
+    /// Number of file write observations.
+    pub file_writes: usize,
+    /// Number of command observations.
+    pub commands: usize,
+    /// Number of note observations.
+    pub notes: usize,
+    /// Number of plan observations.
+    pub plans: usize,
+    /// Number of unique files read.
+    pub unique_files_read: usize,
+    /// Number of unique files written.
+    pub unique_files_written: usize,
+    /// Number of steps flushed to staging.
+    pub steps_flushed: u32,
+    /// Number of pending observations not yet flushed.
+    pub pending_observations: usize,
+}
+
+impl std::fmt::Display for SessionStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "reads={}, writes={}, commands={}, notes={}, plans={}, steps={}, pending={}",
+            self.file_reads,
+            self.file_writes,
+            self.commands,
+            self.notes,
+            self.plans,
+            self.steps_flushed,
+            self.pending_observations
+        )
+    }
+}
+
 /// Source location within a file.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Span {
