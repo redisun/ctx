@@ -382,6 +382,53 @@ impl Session {
         }
     }
 
+    /// Returns the set of file paths touched during this session.
+    ///
+    /// Walks the staging chain and pending observations to collect
+    /// all file paths that were read or written.
+    pub fn files_touched(&self, object_store: &ObjectStore) -> (Vec<String>, Vec<String>) {
+        let mut files_read = HashSet::new();
+        let mut files_written = HashSet::new();
+
+        // Pending observations
+        for obs in &self.pending_observations {
+            match obs {
+                Observation::FileRead { path, .. } => { files_read.insert(path.clone()); }
+                Observation::FileWrite { path, .. } => { files_written.insert(path.clone()); }
+                _ => {}
+            }
+        }
+
+        // Walk staging chain
+        let mut current = self.staging_head;
+        while current != self.base_commit {
+            if let Ok(work) = object_store.get_typed::<WorkCommit>(current) {
+                if let Ok(observations) = self.decode_observations(&work.payload) {
+                    for obs in &observations {
+                        match obs {
+                            Observation::FileRead { path, .. } => { files_read.insert(path.clone()); }
+                            Observation::FileWrite { path, .. } => { files_written.insert(path.clone()); }
+                            _ => {}
+                        }
+                    }
+                }
+                if let Some(&parent) = work.parents.first() {
+                    current = parent;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        let mut reads: Vec<String> = files_read.into_iter().collect();
+        let mut writes: Vec<String> = files_written.into_iter().collect();
+        reads.sort();
+        writes.sort();
+        (reads, writes)
+    }
+
     /// Generates a progress summary from the staging chain.
     pub fn generate_progress_summary(&self, object_store: &ObjectStore) -> Result<String> {
         let mut summary = format!("Task: {}\n", self.task_description);

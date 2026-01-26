@@ -192,7 +192,7 @@ pub fn parse_query_for_seeds(query: &str, index: &Index) -> Result<Vec<NodeId>> 
         .filter(|s| !s.is_empty())
         .collect();
 
-    for token in tokens {
+    for token in &tokens {
         // Check if it looks like a file path
         if looks_like_path(token) {
             let normalized = normalize_path(token);
@@ -238,7 +238,45 @@ pub fn parse_query_for_seeds(query: &str, index: &Index) -> Result<Vec<NodeId>> 
         }
     }
 
+    // Fallback: if no seeds found via exact lookup, try fuzzy path matching.
+    // This connects natural language queries (e.g. "ferric-agent crate") to
+    // file paths in the index (e.g. "ferric-agent/src/lib.rs").
+    if seeds.is_empty() {
+        // Filter tokens to meaningful identifiers (skip short/common words)
+        let meaningful: Vec<&str> = tokens
+            .iter()
+            .copied()
+            .filter(|t| t.len() >= 3 && !is_stop_word(t))
+            .collect();
+
+        if !meaningful.is_empty() {
+            if let Ok(matches) = index.search_paths_by_substring(&meaningful, 5) {
+                for (path, _obj_id) in matches {
+                    let node = NodeId {
+                        kind: NodeKind::File,
+                        id: path,
+                    };
+                    if seen.insert(node.clone()) {
+                        seeds.push(node);
+                    }
+                }
+            }
+        }
+    }
+
     Ok(seeds)
+}
+
+/// Common stop words to skip during fuzzy path matching.
+fn is_stop_word(s: &str) -> bool {
+    matches!(
+        s.to_ascii_lowercase().as_str(),
+        "the" | "this" | "that" | "what" | "how" | "can" | "you" | "about"
+            | "tell" | "show" | "from" | "with" | "for" | "and" | "but"
+            | "not" | "are" | "was" | "were" | "has" | "have" | "had"
+            | "does" | "did" | "will" | "would" | "could" | "should"
+            | "may" | "might" | "shall" | "its" | "his" | "her"
+    )
 }
 
 /// Check if a string looks like a file path.
@@ -410,6 +448,25 @@ pub fn build_pack(repo: &mut CtxRepo, query: &str, config: &RetrievalConfig) -> 
         }
     }
 
+    // Fallback: if seeds/expansion produced no file chunks, include files
+    // from the HEAD commit tree so that previous session work is visible.
+    if chunks.is_empty() {
+        let tree_files = collect_tree_files(repo, head_commit, 20)?;
+        for (path, blob_id) in tree_files {
+            if let Ok(content_bytes) = repo.object_store().get_blob(blob_id) {
+                if let Ok(content) = String::from_utf8(content_bytes) {
+                    chunks.push(RetrievedChunk {
+                        title: path,
+                        object_id: blob_id,
+                        snippet: content,
+                        relevance_score: 400, // moderate relevance for fallback
+                        chunk_kind: ChunkKind::FileContent,
+                    });
+                }
+            }
+        }
+    }
+
     // Step 4: Include narrative
     let mut narrative_content = String::new();
 
@@ -503,6 +560,63 @@ pub fn build_pack(repo: &mut CtxRepo, query: &str, config: &RetrievalConfig) -> 
             reserved_for_response: config.response_reserve,
         },
     })
+}
+
+/// Collect file paths and blob IDs from the HEAD commit's root tree.
+///
+/// Returns up to `limit` files, preferring source code files.
+fn collect_tree_files(
+    repo: &mut CtxRepo,
+    head_commit: ObjectId,
+    limit: usize,
+) -> Result<Vec<(String, ObjectId)>> {
+    use crate::types::Commit;
+
+    let commit: Commit = repo.object_store().get_typed(head_commit)?;
+    let mut results = Vec::new();
+    walk_tree_for_files(repo.object_store(), commit.root_tree, String::new(), &mut results);
+
+    // Sort: prefer .rs files, then by path length (shorter = more important)
+    results.sort_by(|a, b| {
+        let a_rs = a.0.ends_with(".rs");
+        let b_rs = b.0.ends_with(".rs");
+        b_rs.cmp(&a_rs).then_with(|| a.0.len().cmp(&b.0.len()))
+    });
+
+    results.truncate(limit);
+    Ok(results)
+}
+
+/// Recursively walk tree to collect (path, blob_id) pairs.
+fn walk_tree_for_files(
+    store: &crate::ObjectStore,
+    tree_id: ObjectId,
+    prefix: String,
+    results: &mut Vec<(String, ObjectId)>,
+) {
+    use crate::types::{Tree, TreeEntryKind};
+
+    let tree: Tree = match store.get_typed(tree_id) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+
+    for entry in &tree.entries {
+        let full_path = if prefix.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{}/{}", prefix, entry.name)
+        };
+
+        match entry.kind {
+            TreeEntryKind::Blob => {
+                results.push((full_path, entry.id));
+            }
+            TreeEntryKind::Tree => {
+                walk_tree_for_files(store, entry.id, full_path, results);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

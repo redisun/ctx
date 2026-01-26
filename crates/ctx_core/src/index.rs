@@ -598,6 +598,67 @@ impl Index {
         }
     }
 
+    /// Search for file paths containing any of the given substrings.
+    ///
+    /// Iterates all indexed paths and returns those containing at least one
+    /// of the provided substrings (case-insensitive). Results are capped at `limit`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ctx_core::CtxRepo;
+    ///
+    /// # fn main() -> ctx_core::Result<()> {
+    /// let mut repo = CtxRepo::open(".")?;
+    /// let index = repo.index()?;
+    ///
+    /// let results = index.search_paths_by_substring(&["agent", "config"], 10)?;
+    /// for (path, id) in &results {
+    ///     println!("Found: {} -> {}", path, id);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn search_paths_by_substring(
+        &self,
+        substrings: &[&str],
+        limit: usize,
+    ) -> Result<Vec<(String, ObjectId)>> {
+        let read_txn = self.begin_read()?;
+        let table = read_txn.open_table(PATH_TO_ID_TABLE).map_err(|e| {
+            CtxError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to open path table: {}", e),
+            ))
+        })?;
+
+        let mut results = Vec::new();
+
+        for entry in table.iter().map_err(|e| {
+            CtxError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to iterate path table: {}", e),
+            ))
+        })? {
+            if results.len() >= limit {
+                break;
+            }
+            if let Ok((key, value)) = entry {
+                let path: &str = key.value();
+                let path_lower = path.to_ascii_lowercase();
+                if substrings
+                    .iter()
+                    .any(|s| path_lower.contains(&s.to_ascii_lowercase()))
+                {
+                    let obj_id = ObjectId::from_bytes(*value.value());
+                    results.push((path.to_string(), obj_id));
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Look up entities by name within a namespace.
     ///
     /// Returns all entities with the given name in the specified namespace.

@@ -155,7 +155,7 @@ impl RustAnalyzer {
             self.file_content_hashes.insert(uri.clone(), content_hash);
 
             // Give rust-analyzer a moment to process the didOpen notification
-            thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(10));
 
             // Wait for rust-analyzer to finish indexing on first file
             // It signals readiness by sending publishDiagnostics notification
@@ -191,7 +191,7 @@ impl RustAnalyzer {
                 "File content changed, sent didChange notification"
             );
             // Give rust-analyzer a moment to process the didChange notification
-            thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(10));
         }
 
         // Get document symbols
@@ -282,13 +282,24 @@ impl RustAnalyzer {
         let mut references = Vec::new();
         if self.indexing_complete {
             // Give rust-analyzer a moment after document_symbols to process
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(20));
 
-            for (idx, item) in items.iter().enumerate() {
-                // Small delay between requests to avoid overwhelming rust-analyzer
-                if idx > 0 {
-                    thread::sleep(Duration::from_millis(50));
+            let mut ref_idx = 0;
+            for item in &items {
+                // Skip low-value symbols that rarely have useful cross-file references.
+                // This dramatically reduces LSP calls for large files.
+                if matches!(
+                    item.kind,
+                    ItemKind::Other | ItemKind::Const | ItemKind::Static | ItemKind::Module
+                ) {
+                    continue;
                 }
+
+                // Small delay between requests to avoid overwhelming rust-analyzer
+                if ref_idx > 0 {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                ref_idx += 1;
 
                 // Use a position in the middle of the symbol name for better accuracy
                 // This is more reliable than using the start position

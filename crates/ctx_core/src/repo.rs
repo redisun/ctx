@@ -478,6 +478,10 @@ to store and retrieve context across sessions.
         let staging_head = session.staging_head();
         let base_commit = session.base_commit();
 
+        // Gather session info for narrative before compacting
+        let task_desc = session.task_description().to_string();
+        let (files_read, files_written) = session.files_touched(&self.object_store);
+
         // Compact staging into canonical commit
         let commit = staging::compact_staging(
             staging_head,
@@ -497,11 +501,73 @@ to store and retrieve context across sessions.
         // Delete STAGE
         self.refs.delete_stage()?;
 
+        // Write narrative log entry for this session
+        // This makes session history available for future build_pack() retrieval.
+        self.write_session_narrative(&task_desc, &files_read, &files_written, message);
+
         // Clear active session and release lock
         self.active_session = None;
         self.session_lock = None;
 
         Ok(commit_id)
+    }
+
+    /// Writes a narrative log entry summarizing a completed session.
+    ///
+    /// Creates or appends to a daily log file in `.ctx/narrative/log/`.
+    /// Failures are logged as warnings but do not propagate — narrative
+    /// is best-effort and should never block session compaction.
+    fn write_session_narrative(
+        &self,
+        task: &str,
+        files_read: &[String],
+        files_written: &[String],
+        message: &str,
+    ) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs();
+
+        // Compute date and time strings from Unix timestamp
+        // (simple arithmetic to avoid chrono dependency)
+        let days_since_epoch = secs / 86400;
+        let time_of_day = secs % 86400;
+        let hours = time_of_day / 3600;
+        let minutes = (time_of_day % 3600) / 60;
+
+        let (year, month, day) = days_to_ymd(days_since_epoch);
+        let date = format!("{:04}-{:02}-{:02}", year, month, day);
+        let time = format!("{:02}:{:02}", hours, minutes);
+
+        // Build narrative entry
+        let mut entry = format!("**Task:** {}\n", task);
+        entry.push_str(&format!("**Result:** {}\n", message));
+
+        if !files_written.is_empty() {
+            entry.push_str("\n**Files modified:**\n");
+            for f in files_written.iter().take(20) {
+                entry.push_str(&format!("- `{}`\n", f));
+            }
+            if files_written.len() > 20 {
+                entry.push_str(&format!("- ... and {} more\n", files_written.len() - 20));
+            }
+        }
+
+        if !files_read.is_empty() {
+            entry.push_str("\n**Files read:**\n");
+            for f in files_read.iter().take(20) {
+                entry.push_str(&format!("- `{}`\n", f));
+            }
+            if files_read.len() > 20 {
+                entry.push_str(&format!("- ... and {} more\n", files_read.len() - 20));
+            }
+        }
+
+        let narrative = self.narrative();
+        if let Err(e) = narrative.append_log(&date, &time, &entry) {
+            warn!("Failed to write session narrative log: {}", e);
+        }
     }
 
     /// Aborts the current session, discarding all work.
@@ -723,11 +789,22 @@ to store and retrieve context across sessions.
     pub fn analyze_rust(&mut self) -> Result<AnalysisReport> {
         use crate::lsp::{build_edges_from_analysis, RustAnalyzer};
         use crate::types::EdgeBatch;
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         // Check availability
         if !RustAnalyzer::is_available() {
             return Err(CtxError::RustAnalyzerNotFound);
         }
+
+        // Load previous analysis hashes for incremental analysis
+        let hash_cache_path = self.root.join(".ctx").join("analysis_hashes.json");
+        let prev_hashes: std::collections::HashMap<String, u64> =
+            if let Ok(data) = std::fs::read_to_string(&hash_cache_path) {
+                serde_json::from_str(&data).unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            };
 
         // Start rust-analyzer
         let mut analyzer = RustAnalyzer::start(&self.root)?;
@@ -737,22 +814,44 @@ to store and retrieve context across sessions.
 
         let mut all_edges = Vec::new();
         let mut files_analyzed = 0;
+        let mut files_skipped = 0;
         let mut symbols_found = 0;
         let mut calls_resolved = 0;
-        let mut file_blobs: Vec<(String, ObjectId)> = Vec::new(); // Store path→blob mappings
+        let mut file_blobs: Vec<(String, ObjectId)> = Vec::new();
+        let mut new_hashes: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
 
         for file in rust_files {
+            // Read file content and compute hash for incremental analysis
+            let file_content = match std::fs::read(&file) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Warning: Failed to read {}: {}", file.display(), e);
+                    continue;
+                }
+            };
+
+            let mut hasher = DefaultHasher::new();
+            file_content.hash(&mut hasher);
+            let content_hash = hasher.finish();
+
+            let file_canonical = file.canonicalize()?;
+            let file_path = file_canonical.to_string_lossy().to_string();
+
+            // Store hash for next run
+            new_hashes.insert(file_path.clone(), content_hash);
+
+            // Skip unchanged files
+            if prev_hashes.get(&file_path) == Some(&content_hash) {
+                files_skipped += 1;
+                continue;
+            }
+
             match analyzer.analyze_file(&file) {
                 Ok(analysis) => {
                     files_analyzed += 1;
                     symbols_found += analysis.items.len();
                     calls_resolved += analysis.calls.len();
-
-                    // Read file content for ObjectId computation
-                    // Canonicalize to ensure absolute paths (FIX for path matching)
-                    let file_canonical = file.canonicalize()?;
-                    let file_path = file_canonical.to_string_lossy().to_string();
-                    let file_content = std::fs::read(&file)?;
 
                     // Store file content as blob (FIX for prompt pack retrieval)
                     let file_blob_id = self.object_store.put_blob(&file_content)?;
@@ -769,8 +868,34 @@ to store and retrieve context across sessions.
             }
         }
 
+        tracing::info!(
+            "Incremental analysis: {} files analyzed, {} skipped (unchanged)",
+            files_analyzed,
+            files_skipped
+        );
+
         // Shutdown analyzer
         analyzer.shutdown()?;
+
+        // Save analysis hashes for next incremental run
+        if let Ok(json) = serde_json::to_string(&new_hashes) {
+            if let Err(e) = std::fs::write(&hash_cache_path, json) {
+                warn!("Failed to save analysis hash cache: {}", e);
+            }
+        }
+
+        // If no files were analyzed (all unchanged), return early
+        if files_analyzed == 0 {
+            let head = self.head_id()?;
+            return Ok(AnalysisReport {
+                files_analyzed: 0,
+                symbols_found: 0,
+                calls_resolved: 0,
+                edges_generated: 0,
+                edge_batch_id: head, // placeholder
+                commit_id: head,
+            });
+        }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1259,6 +1384,22 @@ pub struct FileAnalysisReport {
     pub edge_batch_id: ObjectId,
     /// ObjectId of the created commit.
     pub commit_id: ObjectId,
+}
+
+/// Converts days since Unix epoch to (year, month, day).
+fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Civil calendar algorithm from https://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
 }
 
 #[cfg(test)]
